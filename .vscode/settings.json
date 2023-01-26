@@ -57,6 +57,11 @@
         "numeric": "cpp",
         "ratio": "cpp",
         "thread": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "*.ipp": "cpp",
+        "hash_map": "cpp",
+        "unordered_set": "cpp",
+        "hash_set": "cpp",
+        "any": "cpp"
     }
 }

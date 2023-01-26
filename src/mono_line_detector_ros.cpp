@@ -8,22 +8,38 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
         ros::param::get("~topicname_image", topicname_image_);
     else
         throw std::runtime_error("There is no 'topicname_image'.");
+    
+    // Check live data or not
+    ros::param::get("~flag_cam_live", flag_cam_live_);
+    ros::param::get("~image_dir", image_dir_);
+    ros::param::get("~image_type", image_type_);
 
     // Subscribe
     sub_image_ = nh_.subscribe<sensor_msgs::Image>(topicname_image_, 1, 
                     &MonoLineDetectorROS::callbackImage, this);
 
-    // Publish
-    // 정현이와 상의해서 결정. 어떤 정보까지 만들어서 보내줄지.
-
-    /* Idea
+    if (flag_cam_live_==false)
+    {
+        readImage(image_dir_, image_type_);
         
-        - 빨강 - 초록 (청록)
-        - 남색 - 노랑
-        - 보라 - 연두
-        - 빨강 - 검정 도 대비가 괜찮음. (사람한테만? 명시성)
+        img_vec_.reserve(10000);
+        // for(int i=0;)
+    }
 
-    */
+    //bwlabel
+    object_area_row_.reserve(20000);
+    object_area_col_.reserve(20000);
+
+    //points
+    points_x_.reserve(10000);
+    points_y_.reserve(10000);
+    line_a_.reserve(10);
+    line_b_.reserve(10);
+
+    //RANSAC
+    param_RANSAC_.iter = 25;
+    param_RANSAC_.thr = 2;
+    param_RANSAC_.mini_inlier = 30;
 
     // Create Fast Line Detector Object
     // Param               Default value   Description
@@ -40,7 +56,7 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     //                                     image is taken as an edge image.
     // do_merge            false         - If true, incremental merging of segments
     //                                     will be performed
-    int   length_threshold   = 10;
+    int   length_threshold   = 20;
     float distance_threshold = 1.41421356f;
     double canny_th1         = 40.0;
     double canny_th2         = 80.0;
@@ -69,14 +85,280 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
 };
 
 void MonoLineDetectorROS::run()
-{
-    ros::Rate rate(500);
-    while(ros::ok()){
-        // ROS_INFO_STREAM("RUN!");
-        ros::spinOnce();
-        rate.sleep();
+{   
+    if (flag_cam_live_ == true)
+    {
+        ros::Rate rate(500);
+        while (ros::ok())
+        {
+            // ROS_INFO_STREAM("RUN!");
+            ros::spinOnce();
+            rate.sleep();
+        }
+    }
+    else // flag_cam_live_ == false
+    {
+        ros::Rate rate(20);
+        while (ros::ok())
+        {
+            test();
+            ros::spinOnce();
+            rate.sleep();
+        }
     }
 
+};
+
+bool computePairNum(std::string pair1, std::string pair2)
+{
+    // return pair1 < pair2;
+
+    int num1 = std::stoi(pair1);
+    int num2 = std::stoi(pair2);
+    return num1 < num2;
+}
+
+void MonoLineDetectorROS::sort_filelists(std::vector<std::string>& filists, std::string& image_type)
+{
+    if (filists.empty())
+    {
+        return;
+    }
+    std::sort(filists.begin(), filists.end(), computePairNum);
+}
+
+void MonoLineDetectorROS::readImage(std::string& image_dir, std::string& image_type)
+{
+    struct dirent *ptr;
+    DIR *dir;
+    dir = opendir(image_dir.c_str());
+    file_lists_.clear();
+
+    while((ptr = readdir(dir)) != NULL)
+    {
+        std::string tmp_file = ptr->d_name;
+        if (tmp_file[0] == '.') continue;
+        if (image_type.size() <= 0)
+        {
+            file_lists_.push_back(ptr->d_name);
+        }
+        else
+        {
+            if (tmp_file.size() < image_type.size()) continue;
+            std::string tmp_cut_type = tmp_file.substr(tmp_file.size() - image_type.size(), image_type.size());
+            if (tmp_cut_type == image_type)
+            {
+                file_lists_.push_back(ptr->d_name);
+            }
+        }
+    }
+
+    n_test_data_ = file_lists_.size();
+
+    ROS_INFO_STREAM("# of files in folder: " <<n_test_data_);
+    
+
+    sort_filelists(file_lists_, image_type);
+
+    for (int i=0; i< n_test_data_; ++i)
+    {
+        std::string img_file = image_dir + file_lists_[i];
+        // std::cout << img_file <<std::endl;
+        cv::Mat img = cv::imread(img_file);
+        img_vec_.push_back(img);
+    }
+};
+
+void MonoLineDetectorROS::test()
+{
+    static int iter_test = 0;
+    // cv::imshow("img input", img_vec_[iter_test]);
+    // cv::waitKey(0);
+
+    cv::Mat img_gray;
+    cv::Mat img_channels[3];
+
+    // dilate & erode
+    cv::Mat img_threshold;
+    cv::Mat img_dilate;
+    cv::Mat img_erode;
+
+    //cvtColor 없으면 안되는걸 봐서 img_gray가 CV_GRAY가 아니다?
+    cv::cvtColor(img_vec_[iter_test], img_gray, CV_BGR2GRAY);
+    img_gray.convertTo(img_gray, CV_8UC1);
+
+    int n_row = img_gray.rows;
+    int n_col = img_gray.cols;
+
+    //bwlabel
+    cv::Mat object_label = cv::Mat::zeros(n_row, n_col, CV_32SC1);
+    int *ptr_object_label = object_label.ptr<int>(0);
+    cv::Mat stats, centroids;
+    std::vector<int> sum_object;
+    cv::Mat img_clone = cv::Mat::zeros(n_row, n_col, CV_8UC1);
+    uchar *ptr_img_clone = img_clone.ptr<uchar>(0);
+
+    //skel
+    // cv::Mat skel(img_gray.size(), CV_8UC1, cv::Scalar(0));
+    
+    std::vector<cv::Vec4f> lines;
+    if (iter_test == 0)
+    {
+        fast_line_detector_->detect(img_gray, lines);
+        fast_line_detector_->drawSegments(img_gray, lines);
+
+        // std:: cout << img_gray.type() << std::endl;
+
+        cv::split(img_gray, img_channels);
+        img_channels[2].copyTo(img_gray);
+        uchar* ptr_img_gray = img_gray.ptr<uchar>(0);  
+        // cv::imshow("B", img_channels[0]);
+        // cv::imshow("G", img_channels[1]);
+        // cv::imshow("R", img_channels[2]);
+        for (int i=0; i<n_row; ++i)
+        {
+            int i_ncols = i * n_col;
+            for (int j=0; j<n_col; ++j)
+            {
+                if (*(ptr_img_gray + i_ncols + j) < 255)
+                {
+                    *(ptr_img_gray + i_ncols + j) = 0;
+                }
+            }
+        }
+        cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
+        cv::dilate(img_threshold, img_dilate, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
+
+        cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
+        cv::erode(img_threshold, img_erode, cv::Mat::ones(cv::Size(7,7),CV_8UC1));
+
+        //bwlabel
+        int n_label = cv::connectedComponentsWithStats(img_erode, object_label, stats, centroids, 8);
+        if (n_label == 0)
+        {
+            ROS_INFO_STREAM("There is no connectivity");
+            return;
+        }
+        
+        for (int object_idx = 0; object_idx < n_label; ++object_idx) 
+        {
+            // object_idx=0 -> background
+            if (object_idx == 0)
+            {
+                sum_object.push_back(0);
+                continue;
+            }
+            int cnt_obj_pixel = 0;
+            object_area_row_.resize(0);
+            object_area_col_.resize(0);
+            int obj_left    = stats.at<int>(object_idx, cv::CC_STAT_LEFT); 
+            int obj_top     = stats.at<int>(object_idx, cv::CC_STAT_TOP);
+            int obj_width   = stats.at<int>(object_idx, cv::CC_STAT_WIDTH);
+            int obj_height  = stats.at<int>(object_idx, cv::CC_STAT_HEIGHT);
+
+            for (int i = obj_top; i < obj_top + obj_height; ++i)
+            {
+                int i_ncols = i*n_col;
+                for (int j=obj_left; j<obj_left + obj_width; ++j)
+                {
+                    if(*(ptr_object_label+i_ncols+j) == object_idx)
+                    {
+                        object_area_row_.push_back(i);
+                        object_area_col_.push_back(j);
+                        cnt_obj_pixel += 1;
+                    }
+                }
+            }
+            sum_object.push_back(cnt_obj_pixel);
+        }
+        int max_obj_pixel_idx = max_element(sum_object.begin(), sum_object.end()) - sum_object.begin();
+
+        int obj_left    = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_LEFT); 
+        int obj_top     = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_TOP);
+        int obj_width   = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_WIDTH);
+        int obj_height  = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_HEIGHT);
+        for (int i = obj_top; i < obj_top + obj_height; ++i)
+        {
+            int i_ncols = i * n_col;
+            for (int j = obj_left; j < obj_left + obj_width; ++j)
+            {
+                if (*(ptr_object_label + i_ncols + j) == max_obj_pixel_idx)
+                {
+                    *(ptr_img_clone + i_ncols + j) = 255;
+                }
+            }
+        }
+
+        std::cout << sum_object[0] << " " << sum_object[1] << " "  << sum_object[2] << " "  << sum_object[3] <<std::endl;
+        std::cout << "max_obj_pixel_idx: " << max_obj_pixel_idx << std::endl;
+
+        // skel
+        cv::Mat skel(img_clone.size(), CV_8UC1, cv::Scalar(0));
+        uchar* ptr_skel = skel.ptr<uchar>(0);
+        cv::Mat temp;
+        cv::Mat eroded;
+        cv::Mat element = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3));
+
+        bool done;
+        do
+        {
+            cv::erode(img_clone, eroded, element);
+            cv::dilate(eroded, temp, element); // temp = open(img)
+            cv::subtract(img_clone, temp, temp);
+            cv::bitwise_or(skel, temp, skel);
+            eroded.copyTo(img_clone);
+
+            done = (cv::countNonZero(img_clone) == 0);
+        } while (!done);
+
+        for (int i=0; i<n_row; ++i)
+        {
+            int i_ncols = i * n_col;
+            for (int j=0; j<n_col; ++j)
+            {
+                if (*(ptr_skel + i_ncols + j) == 255)
+                {
+                    // std::cout << static_cast<int>(*(ptr_skel + i_ncols + j)) << std::endl;
+                    points_x_.push_back(j);
+                    points_y_.push_back(i);
+                }
+            }
+        }
+
+        int n_points = points_x_.size();
+        bool mask_inlier[n_points];
+        
+        // 4 line detection
+        for (int i=0; i<4; ++i)
+        {
+            int param_RANSAC_iter = 25;
+            int param_RANSAC_thr = 2;
+            int param_RANSAC_mini_inlier = 30;
+
+            ransacLine(points_x_, points_y_, /*output*/ mask_inlier, line_a_, line_b_);
+        }
+
+        cv::imshow("img input", skel);
+        // cv::imshow("img input", img_gray);
+        cv::waitKey(0);
+    }
+    iter_test += 1;
+
+    reset_vector();
+};
+
+void MonoLineDetectorROS::reset_vector()
+{
+    points_x_.resize(0);
+    points_y_.resize(0);
+    line_a_.resize(0);
+    line_b_.resize(0);
+};
+
+void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int>& points_y, 
+                                    /*output*/ bool mask_inlier[], std::vector<float>& line_a, std::vector<float>& line_b)
+{
+    
 };
 
 void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
