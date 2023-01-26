@@ -1,0 +1,8 @@
+<launch>
+    <arg name="topicname_image"               default="/0/image_raw"/>
+
+    <node pkg="line_detection" name="line_detector_node" type="line_detector_node" output="screen">
+        <param name="topicname_image" type="string" value="$(arg topicname_image)"/>
+    </node>
+
+</launch>
