@@ -62,6 +62,7 @@
         "hash_map": "cpp",
         "unordered_set": "cpp",
         "hash_set": "cpp",
-        "any": "cpp"
+        "any": "cpp",
+        "core": "cpp"
     }
 }

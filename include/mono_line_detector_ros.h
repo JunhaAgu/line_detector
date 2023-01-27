@@ -20,6 +20,9 @@
 #include <opencv2/video/tracking.hpp> // calcOpticalFlow
 #include <opencv2/calib3d.hpp> // findHomography
 
+#include <random>
+#include <Eigen/Dense>
+
 #include "timer.h"
 
 struct param_RANSAC
@@ -74,6 +77,7 @@ private:
     std::string image_type_;
     std::vector<cv::Mat> img_vec_;
     std::vector<std::string> file_lists_;
+    int image_hz_;
     int n_test_data_;
 
     // bwlabel
@@ -86,8 +90,26 @@ private:
     std::vector<float> line_a_;
     std::vector<float> line_b_;
 
-    param_RANSAC param_RANSAC_;
+    std::vector<int> points_x_tmp_;
+    std::vector<int> points_y_tmp_;
+    std::vector<int> points_x_tmp2_;
+    std::vector<int> points_y_tmp2_;
+
+    std::vector<int> inlier_result_x_;
+    std::vector<int> inlier_result_y_;
+
+    // std::vector<cv::Point2f> points_result_;
+    std::vector<cv::Point2f> prev_feat_;
+    std::vector<cv::Point2f> next_feat_;
+    std::vector<cv::Point2f> help_feat_;
     
+    //ransac
+    param_RANSAC param_RANSAC_;
+    std::random_device rd;
+    std::mt19937 gen_;
+
+    //next iteration
+    cv::Mat img0_;
 
 // for test
 private:
@@ -95,7 +117,9 @@ private:
     void readImage(std::string& image_dir, std::string& image_type);
     void sort_filelists(std::vector<std::string>& filists, std::string& image_type);
     void ransacLine(std::vector<int>& points_x, std::vector<int>& points_y, 
-                                    /*output*/ bool mask_inlier[], std::vector<float>& line_a, std::vector<float>& line_b);
+                                    /*output*/ bool mask_inlier[], std::vector<float>& line_a, std::vector<float>& line_b,
+                                     std::vector<int>& inlier_result_x, std::vector<int>& inlier_result_y);
+    void calcLineIntersection(float dir1_a, float dir1_b, float dir2_a, float dir2_b, float& px_tmp, float& py_tmp);
 
     void reset_vector();
 
