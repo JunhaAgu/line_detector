@@ -25,6 +25,8 @@
 
 #include "timer.h"
 
+#define SQUARE(x) ((x)*(x))
+
 struct param_RANSAC
 {
     int iter;
@@ -73,12 +75,16 @@ private:
 
 // for test
 private:
+    //launch params
     std::string image_dir_;
     std::string image_type_;
     std::vector<cv::Mat> img_vec_;
-    std::vector<std::string> file_lists_;
     int image_hz_;
     int n_test_data_;
+
+    std::vector<std::string> file_lists_;
+
+    bool flag_init_;
 
     // bwlabel
     std::vector<int> object_area_row_;
@@ -111,7 +117,10 @@ private:
     //next iteration
     cv::Mat img0_;
 
-// for test
+    //permutation
+    std::vector<std::vector<int>> perm_;
+
+    // for test
 private:
     void test();
     void readImage(std::string& image_dir, std::string& image_type);
@@ -122,6 +131,10 @@ private:
     void calcLineIntersection(float dir1_a, float dir1_b, float dir2_a, float dir2_b, float& px_tmp, float& py_tmp);
 
     void reset_vector();
+
+    void Thinning(cv::Mat input, int row, int col);
+
+    void permutation(std::vector<int>& input_vec, int depth, int n, int r);
 
 private: 
 

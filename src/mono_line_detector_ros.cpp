@@ -27,6 +27,8 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
         // for(int i=0;)
     }
 
+    flag_init_ = false;
+
     //bwlabel
     object_area_row_.reserve(20000);
     object_area_col_.reserve(20000);
@@ -52,6 +54,29 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     prev_feat_.reserve(10);
     next_feat_.reserve(10);
     help_feat_.reserve(10);
+
+    //permutation
+    perm_.resize(4 * 3 * 2 * 1);
+    for (int i=0; i<24; ++i)
+    {
+        perm_[i].reserve(4);
+    }
+
+    std::vector<int> v;
+    v.push_back(0);
+    v.push_back(1);
+    v.push_back(2);
+    v.push_back(3);
+    permutation(v, 0, 4, 4); // P(4,4)
+    for (int i = 0; i < 24; ++i)
+    {
+        std::cout << perm_[i][0] << " " << perm_[i][1] << " " << perm_[i][2] << " " << perm_[i][3] << std::endl;
+    }
+    // for (int i=0; i<24; ++i)
+    // {
+    //     for (in)
+    // }
+
 
     // Create Fast Line Detector Object
     // Param               Default value   Description
@@ -183,18 +208,17 @@ void MonoLineDetectorROS::readImage(std::string& image_dir, std::string& image_t
 
 void MonoLineDetectorROS::test()
 {
+    // timer::tic();
     timer::tic();
     static int iter_test = 0;
-    // cv::imshow("img input", img_vec_[iter_test]);
-    // cv::waitKey(0);
+    // bool flag_initialization = false ;
 
     ROS_INFO_STREAM(">>>>>>>>>> " << "Iter " << iter_test <<" Start <<<<<<<<<");
 
-    cv::Mat img_visual;
-
+    // input image
     cv::Mat img_gray;
     cv::Mat img_channels[3];
-
+    cv::Mat img_visual;
     cv::Mat img_gray_original;
     
     // dilate & erode
@@ -205,9 +229,7 @@ void MonoLineDetectorROS::test()
     //cvtColor 없으면 안되는걸 봐서 img_gray가 CV_GRAY가 아니다?
     cv::cvtColor(img_vec_[iter_test], img_gray, CV_BGR2GRAY);
     img_gray.convertTo(img_gray, CV_8UC1);
-
     img_gray.convertTo(img_visual, CV_8UC1);
-
     img_gray.convertTo(img_gray_original, CV_8UC1);
 
     int n_row = img_gray.rows;
@@ -221,374 +243,458 @@ void MonoLineDetectorROS::test()
     cv::Mat img_clone = cv::Mat::zeros(n_row, n_col, CV_8UC1);
     uchar *ptr_img_clone = img_clone.ptr<uchar>(0);
 
-    //skel
-    // cv::Mat skel(img_gray.size(), CV_8UC1, cv::Scalar(0));
-
     bool flag_line_detect = false;
     
     std::vector<cv::Vec4f> lines;
-    // if (iter_test == 0)
+
+    fast_line_detector_->detect(img_gray, lines);
+
+    cv::Mat img_zero = cv::Mat::zeros(n_row, n_col, CV_8UC1);
+    fast_line_detector_->drawSegments(img_zero, lines);
+
+    // cv::imshow("img input", img_zero);
+    // cv::waitKey(0);
+
+    cv::split(img_zero, img_channels);
+    img_channels[2].copyTo(img_gray);
+    uchar *ptr_img_gray = img_gray.ptr<uchar>(0);
+    // cv::imshow("B", img_channels[0]);
+    // cv::imshow("G", img_channels[1]);
+    // cv::imshow("R", img_channels[2]);
+
+    // for (int i = 0; i < n_row; ++i)
     // {
-        fast_line_detector_->detect(img_gray, lines);
-        fast_line_detector_->drawSegments(img_gray, lines);
+    //     int i_ncols = i * n_col;
+    //     for (int j = 0; j < n_col; ++j)
+    //     {
+    //         if (*(ptr_img_gray + i_ncols + j) < 255)
+    //         {
+    //             *(ptr_img_gray + i_ncols + j) = 0;
+    //         }
+    //     }
+    // }
 
-        // std:: cout << img_gray.type() << std::endl;
+    // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
+    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
 
-        cv::split(img_gray, img_channels);
-        img_channels[2].copyTo(img_gray);
-        uchar* ptr_img_gray = img_gray.ptr<uchar>(0);  
-        // cv::imshow("B", img_channels[0]);
-        // cv::imshow("G", img_channels[1]);
-        // cv::imshow("R", img_channels[2]);
-        for (int i=0; i<n_row; ++i)
+    // cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
+    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
+
+    // bwlabel
+    int n_label = cv::connectedComponentsWithStats(img_erode, object_label, stats, centroids, 8);
+    if (n_label == 0)
+    {
+        ROS_INFO_STREAM("There is no connectivity");
+        return;
+    }
+
+    int obj_left;
+    int obj_top;
+    int obj_width;
+    int obj_height;
+
+    for (int object_idx = 0; object_idx < n_label; ++object_idx)
+    {
+        // object_idx=0 -> background
+        if (object_idx == 0)
         {
-            int i_ncols = i * n_col;
-            for (int j=0; j<n_col; ++j)
-            {
-                if (*(ptr_img_gray + i_ncols + j) < 255)
-                {
-                    *(ptr_img_gray + i_ncols + j) = 0;
-                }
-            }
+            sum_object.push_back(0);
+            continue;
         }
-        cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
-        cv::dilate(img_threshold, img_dilate, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
+        int cnt_obj_pixel = 0;
+        // object_area_row_.resize(0);
+        // object_area_col_.resize(0);
+        obj_left    = stats.at<int>(object_idx, cv::CC_STAT_LEFT);
+        obj_top     = stats.at<int>(object_idx, cv::CC_STAT_TOP);
+        obj_width   = stats.at<int>(object_idx, cv::CC_STAT_WIDTH);
+        obj_height  = stats.at<int>(object_idx, cv::CC_STAT_HEIGHT);
 
-        cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
-        cv::erode(img_threshold, img_erode, cv::Mat::ones(cv::Size(7,7),CV_8UC1));
-
-        //bwlabel
-        int n_label = cv::connectedComponentsWithStats(img_erode, object_label, stats, centroids, 8);
-        if (n_label == 0)
-        {
-            ROS_INFO_STREAM("There is no connectivity");
-            return;
-        }
-        
-        for (int object_idx = 0; object_idx < n_label; ++object_idx) 
-        {
-            // object_idx=0 -> background
-            if (object_idx == 0)
-            {
-                sum_object.push_back(0);
-                continue;
-            }
-            int cnt_obj_pixel = 0;
-            object_area_row_.resize(0);
-            object_area_col_.resize(0);
-            int obj_left    = stats.at<int>(object_idx, cv::CC_STAT_LEFT); 
-            int obj_top     = stats.at<int>(object_idx, cv::CC_STAT_TOP);
-            int obj_width   = stats.at<int>(object_idx, cv::CC_STAT_WIDTH);
-            int obj_height  = stats.at<int>(object_idx, cv::CC_STAT_HEIGHT);
-
-            for (int i = obj_top; i < obj_top + obj_height; ++i)
-            {
-                int i_ncols = i*n_col;
-                for (int j=obj_left; j<obj_left + obj_width; ++j)
-                {
-                    if(*(ptr_object_label+i_ncols+j) == object_idx)
-                    {
-                        object_area_row_.push_back(i);
-                        object_area_col_.push_back(j);
-                        cnt_obj_pixel += 1;
-                    }
-                }
-            }
-            sum_object.push_back(cnt_obj_pixel);
-        }
-        int max_obj_pixel_idx = max_element(sum_object.begin(), sum_object.end()) - sum_object.begin();
-
-        int obj_left    = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_LEFT); 
-        int obj_top     = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_TOP);
-        int obj_width   = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_WIDTH);
-        int obj_height  = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_HEIGHT);
         for (int i = obj_top; i < obj_top + obj_height; ++i)
         {
             int i_ncols = i * n_col;
             for (int j = obj_left; j < obj_left + obj_width; ++j)
             {
-                if (*(ptr_object_label + i_ncols + j) == max_obj_pixel_idx)
+                if (*(ptr_object_label + i_ncols + j) == object_idx)
                 {
-                    *(ptr_img_clone + i_ncols + j) = 255;
+                    // object_area_row_.push_back(i);
+                    // object_area_col_.push_back(j);
+                    cnt_obj_pixel += 1;
                 }
             }
         }
-        ROS_INFO_STREAM("sum_obj: " << sum_object[0] << " " << sum_object[1] << " "  << sum_object[2] << " "  << sum_object[3]);
-        ROS_INFO_STREAM("max_obj_pixel_idx: " << max_obj_pixel_idx);
+        sum_object.push_back(cnt_obj_pixel);
+    }
+    int max_obj_pixel_idx = max_element(sum_object.begin(), sum_object.end()) - sum_object.begin();
 
-        // skel
-        cv::Mat skel = cv::Mat::zeros(n_row, n_col, CV_8UC1); //(img_clone.size(), CV_8UC1, cv::Scalar(0));
-        cv::ximgproc::thinning(img_clone, skel);
-        uchar* ptr_skel = skel.ptr<uchar>(0);
-
-        // cv::imshow("img input", skel);
-        // cv::waitKey(0);
-
-        for (int i = 0; i < n_row; ++i)
+    obj_left    = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_LEFT);
+    obj_top     = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_TOP);
+    obj_width   = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_WIDTH);
+    obj_height  = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_HEIGHT);
+    for (int i = obj_top; i < obj_top + obj_height; ++i)
+    {
+        int i_ncols = i * n_col;
+        for (int j = obj_left; j < obj_left + obj_width; ++j)
         {
-            int i_ncols = i * n_col;
-            for (int j = 0; j < n_col; ++j)
-            {   
-                if (*(ptr_skel + i_ncols + j) != 0)
-                {
-                    // std::cout << static_cast<int>(*(ptr_skel + i_ncols + j)) << std::endl;
-                    points_x_.push_back(j);
-                    points_y_.push_back(i);
-                }
+            if (*(ptr_object_label + i_ncols + j) == max_obj_pixel_idx)
+            {
+                *(ptr_img_clone + i_ncols + j) = 255;
             }
         }
-        // std::cout << points_x_.size() <<std::endl;
-        // std::cout << points_y_.size() <<std::endl;
-        // cv::imshow("img input", skel);
-        // cv::waitKey(0);
+    }
+    ROS_INFO_STREAM("sum_obj: " << sum_object[0] << " " << sum_object[1] << " " << sum_object[2] << " " << sum_object[3]);
+    ROS_INFO_STREAM("max_obj_pixel_idx: " << max_obj_pixel_idx);
+    
+    // skel
+    cv::Mat skel = cv::Mat::zeros(n_row, n_col, CV_8UC1); //(img_clone.size(), CV_8UC1, cv::Scalar(0));
+    // if (sum_object[max_obj_pixel_idx] > 5000)
+    // {
+    //     cv::erode(img_clone, img_clone, cv::Mat::ones(cv::Size(3, 3), CV_8UC1));
+    // }
 
-        int n_points = points_x_.size();
-        // bool mask_inlier[n_points];
-        // std::vector<int> points_x_tmp_;
-        // std::vector<int> points_y_tmp_;
+    // cv::ximgproc::thinning(img_clone, skel);
+    Thinning(img_clone, n_row, n_col);
+    img_clone.copyTo(skel);
+    uchar *ptr_skel = skel.ptr<uchar>(0);
 
+    double dt_toc = timer::toc(1); // milliseconds
+    ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
+
+    // if (dt_toc>30)
+    // {
+    //     cv::imshow("img input", skel);
+    //     cv::waitKey(0);
+    //     // exit(0);
+    // }
+
+    // cv::imshow("img input", skel);
+    // cv::waitKey(0);
+
+    for (int i = 0; i < n_row; ++i)
+    {
+        int i_ncols = i * n_col;
+        for (int j = 0; j < n_col; ++j)
+        {
+            if (*(ptr_skel + i_ncols + j) != 0)
+            {
+                // std::cout << static_cast<int>(*(ptr_skel + i_ncols + j)) << std::endl;
+                points_x_.push_back(j);
+                points_y_.push_back(i);
+            }
+        }
+    }
+    // std::cout << points_x_.size() <<std::endl;
+    // std::cout << points_y_.size() <<std::endl;
+    // cv::imshow("img input", skel);
+    // cv::waitKey(0);
+
+    int n_points = points_x_.size();
+    // bool mask_inlier[n_points];
+    // std::vector<int> points_x_tmp_;
+    // std::vector<int> points_y_tmp_;
+
+    points_x_tmp_.resize(0);
+    points_y_tmp_.resize(0);
+    // std::copy(points_x_.begin(), points_x_.end(), points_x_tmp_.begin());
+    // std::copy(points_y_.begin(), points_y_.end(), points_y_tmp_.begin());
+    for (int i = 0; i < n_points; ++i)
+    {
+        points_x_tmp_.push_back(points_x_[i]);
+        points_y_tmp_.push_back(points_y_[i]);
+    }
+    // for (int i=0; i<points_x_tmp_.size(); ++i)
+    // {
+    //     std::cout<< "points_x_tmp_: " << points_x_tmp_[i]<<std::endl;
+    // }
+
+    // std::vector<int> points_x_tmp2_;
+    // std::vector<int> points_y_tmp2_;
+
+    // 4 line detection
+    for (int i = 0; i < 4; ++i)
+    {
+        points_x_tmp2_.resize(0);
+        points_y_tmp2_.resize(0);
+        inlier_result_x_.resize(0);
+        inlier_result_y_.resize(0);
+
+        int n_pts_tmp = points_x_tmp_.size();
+        std::cout << "# of remaining pts: " << n_pts_tmp << std::endl;
+        bool mask_inlier[n_pts_tmp];
+        for (int q = 0; q < n_pts_tmp; ++q)
+        {
+            mask_inlier[q] = false;
+        }
+        int param_RANSAC_iter = 25;
+        int param_RANSAC_thr = 2;
+        int param_RANSAC_mini_inlier = 30;
+
+        // std::cout << points_x_tmp_.size() << " " << points_y_tmp_.size() << std::endl;
+        ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_);
+        // std::cout<< "line_a_: " << line_a_[0]<< "line_b_: " << line_b_[0]<<std::endl;
+
+        ///////// visualization (from)
+        float points_x_tmp_min = *std::min_element(inlier_result_x_.begin(), inlier_result_x_.end());
+        float points_x_tmp_max = *std::max_element(inlier_result_x_.begin(), inlier_result_x_.end());
+        float points_y_tmp_min = line_a_[i] * points_x_tmp_min + line_b_[i];
+        float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];
+        // cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
+        // cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
+        // cv::line(img_visual, p0,p1, cv::Scalar(255,0,255),1);
+        ///////// visualization (to)
+
+        for (int q = 0; q < n_pts_tmp; ++q)
+        {
+            if (mask_inlier[q] == false)
+            {
+                points_x_tmp2_.push_back(points_x_tmp_[q]);
+                points_y_tmp2_.push_back(points_y_tmp_[q]);
+            }
+        }
         points_x_tmp_.resize(0);
         points_y_tmp_.resize(0);
-        // std::copy(points_x_.begin(), points_x_.end(), points_x_tmp_.begin());
-        // std::copy(points_y_.begin(), points_y_.end(), points_y_tmp_.begin());
-        for (int i = 0; i < n_points; ++i)
+        for (int i = 0; i < points_x_tmp2_.size(); ++i)
         {
-            points_x_tmp_.push_back(points_x_[i]);
-            points_y_tmp_.push_back(points_y_[i]);
-        }
-        // for (int i=0; i<points_x_tmp_.size(); ++i)
-        // {
-        //     std::cout<< "points_x_tmp_: " << points_x_tmp_[i]<<std::endl;
-        // }
-        
-        // std::vector<int> points_x_tmp2_;
-        // std::vector<int> points_y_tmp2_;
-        
-        
-        // 4 line detection
-        for (int i=0; i<4; ++i)
-        {
-            points_x_tmp2_.resize(0);
-            points_y_tmp2_.resize(0);
-            inlier_result_x_.resize(0);
-            inlier_result_y_.resize(0);
-            
-            int n_pts_tmp = points_x_tmp_.size();
-            std::cout<< "# of remaining pts: " << n_pts_tmp<<std::endl;
-            bool mask_inlier[n_pts_tmp];
-            for (int q = 0; q < n_pts_tmp; ++q)
-            {
-                mask_inlier[q] = false;
-            }
-            int param_RANSAC_iter = 25;
-            int param_RANSAC_thr = 2;
-            int param_RANSAC_mini_inlier = 30;
-        
-            // std::cout << points_x_tmp_.size() << " " << points_y_tmp_.size() << std::endl;
-            ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_);
-            // std::cout<< "line_a_: " << line_a_[0]<< "line_b_: " << line_b_[0]<<std::endl;
-
-            ///////// visualization (from)
-            float points_x_tmp_min = *std::min_element(inlier_result_x_.begin(), inlier_result_x_.end());
-            float points_x_tmp_max = *std::max_element(inlier_result_x_.begin(), inlier_result_x_.end());
-            float points_y_tmp_min = line_a_[i] * points_x_tmp_min + line_b_[i];
-            float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];
-            cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
-            cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
-            cv::line(img_visual, p0,p1, cv::Scalar(255,0,255),1);
-            ///////// visualization (to)
-
-            for (int q = 0; q < n_pts_tmp; ++q)
-            {
-                if (mask_inlier[q] == false)
-                {
-                    points_x_tmp2_.push_back(points_x_tmp_[q]);
-                    points_y_tmp2_.push_back(points_y_tmp_[q]);
-                }
-            }
-            points_x_tmp_.resize(0);
-            points_y_tmp_.resize(0);
-            for (int i = 0; i < points_x_tmp2_.size(); ++i)
-            {
-                points_x_tmp_.push_back(points_x_tmp2_[i]);
-                points_y_tmp_.push_back(points_y_tmp2_[i]);
-            }
-
-            flag_line_detect = true;
-
-            if (points_x_tmp_.size() < 30 && i<3)
-            {
-                flag_line_detect = false;
-                break;
-            }
+            points_x_tmp_.push_back(points_x_tmp2_[i]);
+            points_y_tmp_.push_back(points_y_tmp2_[i]);
         }
 
-        if (flag_line_detect == true)
+        flag_line_detect = true;
+
+        if (points_x_tmp_.size() < 30 && i < 3)
         {
-            for (int i = 0; i < line_a_.size(); ++i)
+            flag_line_detect = false;
+            break;
+        }
+    }
+
+    if (flag_line_detect == true)
+    {
+        for (int i = 0; i < line_a_.size(); ++i)
+        {
+            std::cout << "line_a_[" << i << "]: " << line_a_[i] << "  "
+                      << "line_b_[" << i << "]: " << line_b_[i] << std::endl;
+        }
+
+        std::vector<float> line_a_abs;
+        for (int i = 0; i < line_a_.size(); ++i)
+        {
+            line_a_abs.push_back(SQUARE(line_a_[i]));
+        }
+
+        // intersection points
+        int min_a_abs_idx = std::min_element(line_a_abs.begin(), line_a_abs.end()) - line_a_abs.begin();
+        
+        ROS_INFO_STREAM("min_a_abs_idx: " << min_a_abs_idx);
+
+        std::vector<float> diff_b;
+        float b_min_a_idx = line_b_[min_a_abs_idx];
+
+        for (int i = 0; i < line_b_.size(); ++i)
+        {
+            if (i == min_a_abs_idx)
             {
-                std::cout << "line_a_[" << i << "]: " << line_a_[i] << "  "
-                          << "line_b_[" << i << "]: " << line_b_[i] << std::endl;
-            }
-
-            std::vector<float> line_a_abs;
-            for (int i = 0; i < line_a_.size(); ++i)
-            {
-                line_a_abs.push_back(line_a_[i] * line_a_[i]);
-            }
-            // intersection points
-            int min_a_abs_idx = std::min_element(line_a_abs.begin(), line_a_abs.end()) - line_a_abs.begin();
-            std::cout << min_a_abs_idx << std::endl;
-            std::vector<float> diff_b;
-            float b_min_a_idx = line_b_[min_a_abs_idx];
-            for (int i = 0; i < line_b_.size(); ++i)
-            {
-                if (i == min_a_abs_idx)
-                {
-                    diff_b.push_back(1e7);
-                }
-                else
-                {
-                    diff_b.push_back(std::abs(line_b_[i] - b_min_a_idx));
-                }
-                std::cout << diff_b[i] << std::endl;
-            }
-            int min_diff_b_idx = std::min_element(diff_b.begin(), diff_b.end()) - diff_b.begin();
-            std::cout << min_diff_b_idx << std::endl;
-
-            std::vector<float> dir1_line_a;
-            std::vector<float> dir1_line_b;
-
-            std::vector<float> dir2_line_a;
-            std::vector<float> dir2_line_b;
-
-            // dir1_line_a.push_back(line_a_[min_a_abs_idx]);
-            // dir1_line_a.push_back(line_a_[min_diff_b_idx]);
-
-            for (int i = 0; i < line_a_.size(); ++i)
-            {
-                if (i == min_a_abs_idx)
-                {
-                    dir1_line_a.push_back(line_a_[i]);
-                    dir1_line_b.push_back(line_b_[i]);
-                }
-                else if (i == min_diff_b_idx)
-                {
-                    dir1_line_a.push_back(line_a_[i]);
-                    dir1_line_b.push_back(line_b_[i]);
-                }
-                else
-                {
-                    dir2_line_a.push_back(line_a_[i]);
-                    dir2_line_b.push_back(line_b_[i]);
-                }
-            }
-            for (int i = 0; i < dir1_line_a.size(); ++i)
-            {
-                float dir1_a = dir1_line_a[i];
-                float dir1_b = dir1_line_b[i];
-
-                for (int j = 0; j < dir2_line_a.size(); ++j)
-                {
-                    float dir2_a = dir2_line_a[j];
-                    float dir2_b = dir2_line_b[j];
-                    float px_tmp = 0.0;
-                    float py_tmp = 0.0;
-                    calcLineIntersection(dir1_a, dir1_b, dir2_a, dir2_b, px_tmp, py_tmp);
-                    cv::Point2f points_tmp(px_tmp, py_tmp);
-                    next_feat_.push_back(points_tmp);
-                    // px_.push_back(px_tmp);
-                    // py_.push_back(py_tmp);
-                    std::cout << "dir1_a: " << dir1_a << ", "
-                              << "dir1_b: " << dir1_b << std::endl;
-                    std::cout << "dir2_a: " << dir2_a << ", "
-                              << "dir2_b: " << dir2_b << std::endl;
-                    std::cout << "points_tmp: "
-                              << "(" << points_tmp.x << ", " << points_tmp.y << ")" << std::endl;
-                }
-            }
-            for (int i = 0; i < next_feat_.size(); ++i)
-            {
-                cv::circle(img_visual, next_feat_[i], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
-            }
-
-            if (iter_test == 0)
-            {
-                img_gray_original.copyTo(img0_);
-                prev_feat_.resize(0);
-                for (int i = 0; i < next_feat_.size(); ++i)
-                {
-                    prev_feat_.push_back(next_feat_[i]);
-                }
-                ROS_INFO_STREAM(">>>>>>>>>> Initialization Complete <<<<<<<<<");
-
-                // cv::imshow("img input", img_visual);
-                // // cv::imshow("img input", img_gray);
-                // cv::waitKey(0);
+                diff_b.push_back(1e7);
             }
             else
             {
-                help_feat_.resize(0);
-                // check prev_feat vs. help_feat
+                diff_b.push_back(std::abs(line_b_[i] - b_min_a_idx));
+            }
+            std::cout << diff_b[i] << std::endl;
+        }
+        int min_diff_b_idx = std::min_element(diff_b.begin(), diff_b.end()) - diff_b.begin();
+        std::cout << min_diff_b_idx << std::endl;
 
-                std::vector<float> diff_prev_and_help;
-                for (int i = 0; i < prev_feat_.size(); ++i)
-                {
-                    diff_prev_and_help.resize(0);
-                    for (int j = 0; j < next_feat_.size(); ++j)
-                    {
-                        float diff_norm = std::sqrt((prev_feat_[i].x - next_feat_[j].x) * (prev_feat_[i].x - next_feat_[j].x) + (prev_feat_[i].y - next_feat_[j].y) * (prev_feat_[i].y - next_feat_[j].y));
-                        diff_prev_and_help.push_back(diff_norm);
-                        int diff_min_idx = std::min_element(diff_prev_and_help.begin(), diff_prev_and_help.end()) - diff_prev_and_help.end();
-                        help_feat_[i] = next_feat_[diff_min_idx];
-                    }
-                }
-                // next_feat_.resize(0);
-                std::vector<unsigned char> status;
-                std::vector<float> err;
-                ROS_INFO_STREAM("before tracking");
-                cv::calcOpticalFlowPyrLK(img0_, img_gray_original, prev_feat_, next_feat_, status, err, cv::Size(31, 31), 0,
-                                         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 30, 0.01), 4); // use OPTFLOW_USE_INITIAL_FLOW
+        std::vector<float> dir1_line_a;
+        std::vector<float> dir1_line_b;
 
-                // cv::imshow("img input", img_visual);
-                // // cv::imshow("img input", img_gray);
-                // cv::waitKey(0);
+        std::vector<float> dir2_line_a;
+        std::vector<float> dir2_line_b;
 
-                img_gray_original.copyTo(img0_);
-                prev_feat_.resize(0);
-                for (int i = 0; i < next_feat_.size(); ++i)
-                {
-                    prev_feat_.push_back(next_feat_[i]);
-                }
-
-                // ROS_INFO_STREAM(">>>>>>>>>> " << "Iter " << iter_test <<" Complete <<<<<<<<<");
+        for (int i = 0; i < line_a_.size(); ++i)
+        {
+            if (i == min_a_abs_idx)
+            {
+                dir1_line_a.push_back(line_a_[i]);
+                dir1_line_b.push_back(line_b_[i]);
+            }
+            else if (i == min_diff_b_idx)
+            {
+                dir1_line_a.push_back(line_a_[i]);
+                dir1_line_b.push_back(line_b_[i]);
+            }
+            else
+            {
+                dir2_line_a.push_back(line_a_[i]);
+                dir2_line_b.push_back(line_b_[i]);
             }
         }
-        else if (flag_line_detect == false)
+        
+        for (int i = 0; i < dir1_line_a.size(); ++i)
         {
-            ROS_INFO_STREAM("4 line detection fail");
+            float dir1_a = dir1_line_a[i];
+            float dir1_b = dir1_line_b[i];
+
+            for (int j = 0; j < dir2_line_a.size(); ++j)
+            {
+                float dir2_a = dir2_line_a[j];
+                float dir2_b = dir2_line_b[j];
+                float px_tmp = 0.0;
+                float py_tmp = 0.0;
+                calcLineIntersection(dir1_a, dir1_b, dir2_a, dir2_b, px_tmp, py_tmp);
+                cv::Point2f points_tmp(px_tmp, py_tmp);
+                next_feat_.push_back(points_tmp);
+                // px_.push_back(px_tmp);
+                // py_.push_back(py_tmp);
+                std::cout << "dir1_a: " << dir1_a << ", "
+                          << "dir1_b: " << dir1_b << std::endl;
+                std::cout << "dir2_a: " << dir2_a << ", "
+                          << "dir2_b: " << dir2_b << std::endl;
+                std::cout << "points_tmp: "
+                          << "(" << points_tmp.x << ", " << points_tmp.y << ")" << std::endl;
+            }
         }
+        // for (int i = 0; i < next_feat_.size(); ++i)
+        // {
+        //     cv::circle(img_visual, next_feat_[i], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
+        // }
 
-        // cv::imshow("img input", img_visual);
-        // // cv::imshow("img input", img_gray);
-        // cv::waitKey(0);
-
-        double dt_toc2 = timer::toc(1); // milliseconds
-        ROS_INFO_STREAM("total time :" << dt_toc2 << " [ms]");
-
-        ROS_INFO_STREAM(">>>>>>>>>> " << "Iter " << iter_test <<" End <<<<<<<<<");
-        iter_test += 1;
-        if (iter_test == n_test_data_)
+        if (flag_init_ == false)
         {
-            ROS_INFO_STREAM(" >>>>>>>>>> All data is done <<<<<<<<<");
-            exit(0);
+            flag_init_ = true;
+            
+            img_gray_original.copyTo(img0_);
+            prev_feat_.resize(0);
+            for (int i = 0; i < next_feat_.size(); ++i)
+            {
+                prev_feat_.push_back(next_feat_[i]);
+            }
+            ROS_INFO_STREAM(">>>>>>>>>> Initialization Complete <<<<<<<<<");
+
+            // cv::imshow("img input", img_visual);
+            // // cv::imshow("img input", img_gray);
+            // cv::waitKey(0);
         }
+        else
+        {
+            
+            help_feat_.resize(0);
+            // check prev_feat vs. help_feat
 
-        cv::imshow("img input", img_visual);
-        // cv::imshow("img input", img_gray);
-        cv::waitKey(5);
+            std::vector<float> diff_prev_and_help;
+            
+            // 이건 matching 문제가 있다.
+            // for (int i = 0; i < prev_feat_.size(); ++i)
+            // {
+            //     diff_prev_and_help.resize(0);
+            //     for (int j = 0; j < next_feat_.size(); ++j)
+            //     {
+            //         float diff_norm = std::sqrt( SQUARE(prev_feat_[i].x - next_feat_[j].x) + SQUARE(prev_feat_[i].y - next_feat_[j].y) );
+            //         diff_prev_and_help.push_back(diff_norm);
+            //         std::cout << diff_norm << " ";
+            //     }
+            //     std::cout << std::endl;
+            //     int diff_min_idx = std::min_element(diff_prev_and_help.begin(), diff_prev_and_help.end()) - diff_prev_and_help.begin();
+            //     //check 할당도 안했는데 [~]로 대입해주려고 하면 안됨.
+            //     help_feat_.push_back(next_feat_[diff_min_idx]);
+            //     std::cout << diff_min_idx <<std::endl;
+            //     std::cout << next_feat_[diff_min_idx] <<std::endl;
+            //     std::cout << help_feat_[i] <<std::endl;
+            // }
 
-        reset_vector();
+
+            std::vector<float> diff_norm;
+            
+            for (int k = 0; k < perm_.size(); ++k)
+            {
+                float diff_norm_sum_tmp = 0;
+                for (int p=0; p<4 ; ++p)
+                {
+                    int perm_k_p = perm_[k][p];
+                    diff_norm_sum_tmp += std::sqrt( SQUARE(prev_feat_[p].x - next_feat_[perm_k_p].x) + SQUARE(prev_feat_[p].y - next_feat_[perm_k_p].y) );
+                }
+                diff_norm.push_back(diff_norm_sum_tmp);
+            }
+            int diff_min_idx = std::min_element(diff_norm.begin(), diff_norm.end()) - diff_norm.begin();
+
+            for (int i=0; i<4; ++i)
+            {
+                help_feat_.push_back(next_feat_[perm_[diff_min_idx][i]]);
+            }
+            // exit(0);
+            
+
+            std::vector<unsigned char> status;
+            std::vector<float> err;
+            ROS_INFO_STREAM("before tracking");
+            // std::cout << prev_feat_.size() << " " << help_feat_.size() << std::endl;
+            std::cout << "help_feat_[0]" << " " << help_feat_[0] << std::endl;
+            std::cout << "help_feat_[1]" << " " << help_feat_[1] << std::endl;
+            std::cout << "help_feat_[2]" << " " << help_feat_[2] << std::endl;
+            std::cout << "help_feat_[3]" << " " << help_feat_[3] << std::endl;
+
+            cv::calcOpticalFlowPyrLK(img0_, img_gray_original, prev_feat_, help_feat_, status, err, cv::Size(51, 51), 0,
+                                     {}, 4); // use OPTFLOW_USE_INITIAL_FLOW
+            
+            std::cout << "help_feat_[0]" << " " << help_feat_[0] << std::endl;
+            std::cout << "help_feat_[1]" << " " << help_feat_[1] << std::endl;
+            std::cout << "help_feat_[2]" << " " << help_feat_[2] << std::endl;
+            std::cout << "help_feat_[3]" << " " << help_feat_[3] << std::endl;
+
+            // help_feat_ == next_feat_
+
+            // cv::imshow("img input", img_visual);
+            // // cv::imshow("img input", img_gray);
+            // cv::waitKey(0);
+
+            img_gray_original.copyTo(img0_);
+            prev_feat_.resize(0);
+            for (int i = 0; i < help_feat_.size(); ++i)
+            {
+                prev_feat_.push_back(help_feat_[i]);
+            }
+
+            // ROS_INFO_STREAM(">>>>>>>>>> " << "Iter " << iter_test <<" Complete <<<<<<<<<");
+        }
+    }
+    else if (flag_line_detect == false)
+    {
+        ROS_INFO_STREAM("4 line detection fail");
+    }
+
+    // cv::imshow("img input", img_visual);
+    // // cv::imshow("img input", img_gray);
+    // cv::waitKey(0);
+
+    // double dt_toc = timer::toc(1); // milliseconds
+    // ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
+
+    // if (dt_toc>30)
+    // {
+    //     cv::imshow("img input", skel);
+    //     cv::waitKey(0);
+    //     // exit(0);
+    // }
+
+    ROS_INFO_STREAM(">>>>>>>>>> "
+                    << "Iter " << iter_test << " End <<<<<<<<<");
+    iter_test += 1;
+    if (iter_test == n_test_data_)
+    {
+        ROS_INFO_STREAM(" >>>>>>>>>> All data is done <<<<<<<<<");
+        exit(0);
+    }
+
+    for (int i = 0; i < help_feat_.size(); ++i)
+    {
+        cv::circle(img_visual, help_feat_[i], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
+    }
+    cv::imshow("img input", img_visual);
+    // if (iter_test>143)
+    // cv::waitKey(0);
+    // else
+    cv::waitKey(5);
+
+    reset_vector();
 };
 
 void MonoLineDetectorROS::reset_vector()
@@ -601,6 +707,10 @@ void MonoLineDetectorROS::reset_vector()
     // px_.resize(0);
     // py_.resize(0);
     next_feat_.resize(0);
+    // for (int i=0; i<24; ++i)
+    // {
+    //     perm_[i].resize(0);
+    // }
 };
 
 void MonoLineDetectorROS::calcLineIntersection(float dir1_a, float dir1_b, float dir2_a, float dir2_b, float& px_tmp, float& py_tmp)
@@ -1050,4 +1160,173 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     }
     
     // Done.
+};
+
+void MonoLineDetectorROS::Thinning(cv::Mat input, int row, int col)
+{
+    int x, y, p, q, xp, yp, xm, ym, cc, cd;
+    int np1, sp1, hv;
+    int cnt=0, chk=0, flag=0;
+ 
+    unsigned char *m_BufImage;
+    unsigned char *m_ResultImg;
+    m_BufImage =    (unsigned char*)malloc(sizeof(unsigned char)*row*col);
+    m_ResultImg =    (unsigned char*)malloc(sizeof(unsigned char)*row*col);
+ 
+    // Result image에 Mat format의 input image Copy
+    for( y = 0 ; y < row ; y ++ ){
+        for( x = 0 ; x < col ; x++ ){
+            *(m_ResultImg+(col*y)+x) = input.at<uchar>(y,x);
+        }
+    }
+ 
+    do{
+        // Image Buffer를 0으로 셋팅
+        for( y = 1 ; y < row-1 ; y ++ ){
+            for( x = 1 ; x < col-1 ; x++ ){
+                *(m_BufImage+(col*y)+x) = 0;
+            }
+        }
+ 
+        // 천이 추출
+        if(chk == 0) flag = 0;
+        chk = cnt % 2;
+        cnt ++;
+ 
+        for( y = 1 ; y < row-1 ; y ++ ){
+            ym = y - 1;
+            yp = y + 1;
+            for( x = 1 ; x < col-1 ; x ++ ){
+                if(*(m_ResultImg+(col*y)+x) == 0) continue;
+ 
+                np1 = 0;
+                for(q = y-1 ; q <= y+1; q ++ ){
+                    for(p = x-1 ; p <= x+1; p ++ ){
+                        if(*(m_ResultImg+(col*q)+p) != 0) np1++;
+                    }
+                }
+ 
+                if(np1 < 3 || np1 > 7){
+                    *(m_BufImage+(col*y)+x) = 255;
+                    continue;                    
+                }
+ 
+                xm = x - 1;
+                xp = x + 1;
+                sp1 = 0;
+ 
+                if(*(m_ResultImg+(col*ym)+x) == 0 && *(m_ResultImg+(col*ym)+xp) != 0) sp1++;
+                if(*(m_ResultImg+(col*ym)+xp) == 0 && *(m_ResultImg+(col*y)+xp) != 0) sp1++;
+                if(*(m_ResultImg+(col*y)+xp) == 0 && *(m_ResultImg+(col*yp)+xp) != 0) sp1++;
+                if(*(m_ResultImg+(col*yp)+xp) == 0 && *(m_ResultImg+(col*yp)+x) != 0) sp1++;
+                if(*(m_ResultImg+(col*yp)+x) == 0 && *(m_ResultImg+(col*yp)+xm) != 0) sp1++;
+                if(*(m_ResultImg+(col*yp)+xm) == 0 && *(m_ResultImg+(col*y)+xm) != 0) sp1++;
+                if(*(m_ResultImg+(col*y)+xm) == 0 && *(m_ResultImg+(col*ym)+xm) != 0) sp1++;
+                if(*(m_ResultImg+(col*ym)+xm) == 0 && *(m_ResultImg+(col*ym)+x) != 0) sp1++;
+ 
+                if(sp1 != 1){
+                    *(m_BufImage+(col*y)+x) = 255;
+                    continue;
+                }
+ 
+                if(chk == 0){
+                    cc = *(m_ResultImg+(col*ym)+x) * *(m_ResultImg+(col*y)+xp);
+                    cc = cc * *(m_ResultImg+(col*yp)+x);
+ 
+                    cd = *(m_ResultImg+(col*y)+xp) * *(m_ResultImg+(col*yp)+x);
+                    cd = cd * *(m_ResultImg+(col*y)+xm);
+                }
+                else{
+                    cc = *(m_ResultImg+(col*ym)+x) * *(m_ResultImg+(col*y)+xp);
+                    cc = cc * *(m_ResultImg+(col*y)+xm);
+ 
+                    cd = *(m_ResultImg+(col*ym)+x) * *(m_ResultImg+(col*yp)+x);
+                    cd = cd * *(m_ResultImg+(col*y)+xm);                
+                }
+ 
+                if(cc != 0 || cd != 0){
+                    *(m_BufImage+(col*y)+x) = 255;
+                    continue;
+                }
+                flag = 1;
+            }
+        }
+ 
+        for( y = 1 ; y < row-1 ; y ++ ){
+            for( x = 1 ; x < col-1 ; x ++ ){
+                *(m_ResultImg+(col*y)+x) = *(m_BufImage+(col*y)+x);
+            }
+        }
+    }while(!(chk == 1 && flag == 0));
+ 
+    // 4연결점 처리
+    for( y = 1 ; y < row-1 ; y ++ ){
+        yp = y + 1;
+        ym = y - 1;
+        for( x = 1 ; x < col-1 ; x ++ ){
+            if(*(m_ResultImg+(col*y)+x) == 0) continue;
+ 
+            xm = x - 1;
+            xp = x + 1;
+            sp1 = 0;
+            if(*(m_ResultImg+(col*ym)+x) == 0 && *(m_ResultImg+(col*ym)+xp) != 0) sp1++;
+            if(*(m_ResultImg+(col*ym)+xp) == 0 && *(m_ResultImg+(col*y)+xp) != 0) sp1++;
+            if(*(m_ResultImg+(col*y)+xp) == 0 && *(m_ResultImg+(col*yp)+xp) != 0) sp1++;
+            if(*(m_ResultImg+(col*yp)+xp) == 0 && *(m_ResultImg+(col*yp)+x) != 0) sp1++;
+            if(*(m_ResultImg+(col*yp)+x) == 0 && *(m_ResultImg+(col*yp)+xm) != 0) sp1++;
+            if(*(m_ResultImg+(col*yp)+xm) == 0 && *(m_ResultImg+(col*y)+xm) != 0) sp1++;
+            if(*(m_ResultImg+(col*y)+xm) == 0 && *(m_ResultImg+(col*ym)+xm) != 0) sp1++;
+            if(*(m_ResultImg+(col*ym)+xm) == 0 && *(m_ResultImg+(col*ym)+x) != 0) sp1++;
+ 
+            hv = 0;
+            if(sp1 == 2){
+                if        ((*(m_ResultImg+(col*ym)+x) & *(m_ResultImg+(col*y)+xp)) != 0) hv++;
+                else if    ((*(m_ResultImg+(col*y)+xp) & *(m_ResultImg+(col*yp)+x)) != 0) hv++;
+                else if    ((*(m_ResultImg+(col*yp)+x) & *(m_ResultImg+(col*y)+xm)) != 0) hv++;
+                else if    ((*(m_ResultImg+(col*y)+xm) & *(m_ResultImg+(col*ym)+x)) != 0) hv++;
+ 
+                if(hv == 1) *(m_ResultImg+(col*y)+x) = 0;
+            }
+            else if(sp1 == 3){
+                if        ((*(m_ResultImg+(col*ym)+x) & *(m_ResultImg+(col*y)+xm) & *(m_ResultImg+(col*y)+xp)) != 0) hv++;
+                else if    ((*(m_ResultImg+(col*yp)+x) & *(m_ResultImg+(col*y)+xm) & *(m_ResultImg+(col*y)+xp)) != 0) hv++;
+                else if ((*(m_ResultImg+(col*ym)+x) & *(m_ResultImg+(col*yp)+x) & *(m_ResultImg+(col*y)+xm)) != 0) hv++;
+                else if ((*(m_ResultImg+(col*ym)+x) & *(m_ResultImg+(col*yp)+x) & *(m_ResultImg+(col*y)+xp)) != 0) hv++;
+ 
+                if(hv == 1) *(m_ResultImg+(col*y)+x) = 0;
+            }
+        }
+    }
+ 
+    // 들어온 배열에 재복사
+    for( y = 0 ; y < row ; y ++ ){
+        for( x = 0 ; x < col ; x++ ){
+            input.at<uchar>(y,x) = *(m_ResultImg+(col*y)+x);
+        }
+    }
+ 
+    free(m_BufImage);
+    free(m_ResultImg);
+};
+
+void MonoLineDetectorROS::permutation(std::vector<int>& input_vec, int depth, int n, int r)
+{
+    if (depth == r)
+    {
+        static int k = 0;
+        for (int i = 0; i < r; i++)
+        {   
+            perm_[k].push_back(input_vec[i]);
+            // std::cout << "depth: " << depth << " " << "i: " << i << " " << "input_vec[i]: " << input_vec[i] <<std::endl;
+        }
+        k += 1;
+        return;
+    }
+
+    for (int i = depth; i < n; i++)
+    {
+        std::swap(input_vec[depth], input_vec[i]);         // 스왑
+        permutation(input_vec, depth + 1, n, r); // 재귀
+        std::swap(input_vec[depth], input_vec[i]);         // 다시 원래 위치로 되돌리기
+    }
 };

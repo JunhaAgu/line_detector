@@ -1,9 +1,9 @@
 <launch>
     <arg name="topicname_image"                 default="/0/image_raw"/>
     <arg name="flag_cam_live"                   default="false"/>
-    <arg name="image_dir"                       default="/home/junhakim/mono_calibration/data2/"/>
+    <arg name="image_dir"                       default="/home/junhakim/mono_calibration/data1/"/>
     <arg name="image_type"                      default="png"/>
-    <arg name="image_hz"                        default="10"/>
+    <arg name="image_hz"                        default="30"/>
 
     <node pkg="line_detection" name="line_detector_node" type="line_detector_node" output="screen">
         <param name="topicname_image" type="string" value="$(arg topicname_image)"/>
