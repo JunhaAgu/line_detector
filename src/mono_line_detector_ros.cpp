@@ -40,8 +40,8 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     line_b_.reserve(10);
 
     //RANSAC
-    param_RANSAC_.iter = 25;
-    param_RANSAC_.thr = 2;
+    param_RANSAC_.iter = 30;
+    param_RANSAC_.thr = 4;
     param_RANSAC_.mini_inlier = 30;
     points_x_tmp_.reserve(10000);
     points_y_tmp_.reserve(10000);
@@ -95,8 +95,8 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     //                                     will be performed
     int   length_threshold   = 20;
     float distance_threshold = 1.41421356f;
-    double canny_th1         = 40.0;
-    double canny_th2         = 80.0;
+    double canny_th1         = 10.0;
+    double canny_th2         = 30.0;
     int canny_aperture_size  = 3; // sobel filter size
     bool do_merge            = true;
 
@@ -275,10 +275,10 @@ void MonoLineDetectorROS::test()
     // }
 
     // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
+    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(15, 15), CV_8UC1));
 
     // cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
+    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(15, 15), CV_8UC1));
 
     // bwlabel
     int n_label = cv::connectedComponentsWithStats(img_erode, object_label, stats, centroids, 8);
@@ -1035,11 +1035,15 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
 
     cv_bridge::CvImagePtr cv_ptr;
     cv_ptr = cv_bridge::toCvCopy(msg, msg->encoding);
-    cv_ptr->image.copyTo(img_color);
+    // cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
 
-    cv::remap(img_color, img_color_undist_, map1_, map2_, cv::INTER_LINEAR);
+    cv_ptr->image.copyTo(img_gray);
+    
+    cv::remap(img_gray, img_color_undist_, map1_, map2_, cv::INTER_LINEAR);
     // cv_ptr->image.copyTo(img_gray);
-    cv::cvtColor(img_color_undist_, img_gray, CV_BGR2GRAY);
+    // cv::cvtColor(img_color_undist_, img_gray, CV_BGR2GRAY);
+
+    img_color_undist_.copyTo(img_gray);
 
     //cvtColor 없으면 안되는걸 봐서 img_gray가 CV_GRAY가 아니다?
     // cv::cvtColor(img_color, img_gray, CV_BGR2GRAY);
@@ -1252,9 +1256,9 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
         float points_x_tmp_max = *std::max_element(inlier_result_x_.begin(), inlier_result_x_.end());
         float points_y_tmp_min = line_a_[i] * points_x_tmp_min + line_b_[i];
         float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];
-        // cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
-        // cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
-        // cv::line(img_visual, p0,p1, cv::Scalar(255,0,255),1);
+        cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
+        cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
+        cv::line(img_visual, p0,p1, cv::Scalar(255,0,255),1);
         ///////// visualization (to)
 
         for (int q = 0; q < n_pts_tmp; ++q)
