@@ -19,6 +19,9 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     sub_image_ = nh_.subscribe<sensor_msgs::Image>(topicname_image_, 1, 
                     &MonoLineDetectorROS::callbackImage, this);
 
+    // Pusblish
+    pub_projected_points_ = nh_.advertise<geometry_msgs::PoseArray>("/line_detector_node/projected_points",1);
+
     if (flag_cam_live_==false)
     {
         readImage(image_dir_, image_type_);
@@ -1699,6 +1702,24 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // cv::imshow("img input", img_visual);
     // // cv::imshow("img input", img_gray);
     // cv::waitKey(0);
+
+    double *ptr_cameraMatrix = cameraMatrix_.ptr<double>(0);
+
+    geometry_msgs::PoseArray  posearray;
+    posearray.header.stamp = ros::Time::now(); // timestamp of creation of the msg
+    posearray.header.frame_id = "map"; // frame id in which the array is published
+    geometry_msgs::Pose p; // one pose to put in the array
+
+    for (int i = 0; i < 4; ++i)
+    {
+        p.position.x = ( (help_feat_[i].x) - (*(ptr_cameraMatrix + 2)) ) / *(ptr_cameraMatrix + 0); // u = (x - cx)/fx
+        p.position.y = ( (help_feat_[i].y) - (*(ptr_cameraMatrix + 5)) ) / *(ptr_cameraMatrix + 4); // v = (y - cy)/fy
+        p.position.z = i;
+        // push in array
+        posearray.poses.push_back(p);
+    }
+
+    pub_projected_points_.publish(posearray);
 
     double dt_toc = timer::toc(1); // milliseconds
     ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");

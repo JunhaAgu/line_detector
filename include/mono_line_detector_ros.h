@@ -6,7 +6,8 @@
 #include <dirent.h>
 
 #include "ros/ros.h"
-#include "sensor_msgs/Image.h" // for 'image'\
+#include "sensor_msgs/Image.h" // for 'image'
+#include "geometry_msgs/PoseArray.h"
 
 #include "cv_bridge/cv_bridge.h"
 #include "opencv2/core.hpp"
@@ -63,7 +64,9 @@ private:
     ros::Subscriber sub_image_;
     std::string topicname_image_;
 
-
+// Publishers
+private:
+    ros::Publisher pub_projected_points_;
 
 public:
     MonoLineDetectorROS(const ros::NodeHandle& nh);
