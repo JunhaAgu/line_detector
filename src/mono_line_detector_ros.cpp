@@ -41,7 +41,7 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
 
     //RANSAC
     param_RANSAC_.iter = 30;
-    param_RANSAC_.thr = 4;
+    param_RANSAC_.thr = 1;
     param_RANSAC_.mini_inlier = 30;
     points_x_tmp_.reserve(10000);
     points_y_tmp_.reserve(10000);
@@ -95,8 +95,8 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     //                                     will be performed
     int   length_threshold   = 20;
     float distance_threshold = 1.41421356f;
-    double canny_th1         = 10.0;
-    double canny_th2         = 30.0;
+    double canny_th1         = 20.0;
+    double canny_th2         = 40.0;
     int canny_aperture_size  = 3; // sobel filter size
     bool do_merge            = true;
 
@@ -112,8 +112,10 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
 
     cameraMatrix_= cv::Mat::eye(3, 3, CV_64FC1);
     distCoeffs_ = cv::Mat::zeros(1, 5, CV_64FC1);
-    cameraMatrix_=(cv::Mat1d(3, 3) <<  5.158077490877873e+02, 0.0, 3.645846749659401e+02, 0.0, 5.158399101987746e+02, 2.097769119587788e+02, 0.0, 0.0, 1.0);
-    distCoeffs_ = (cv::Mat1d(1, 5) << -0.368520007660487, 0.142043301312520, 0.0, 0.0, 0.0);
+    // cameraMatrix_=(cv::Mat1d(3, 3) <<  5.158077490877873e+02, 0.0, 3.645846749659401e+02, 0.0, 5.158399101987746e+02, 2.097769119587788e+02, 0.0, 0.0, 1.0);
+    // distCoeffs_ = (cv::Mat1d(1, 5) << -0.368520007660487, 0.142043301312520, 0.0, 0.0, 0.0);
+    cameraMatrix_=(cv::Mat1d(3, 3) <<  5.145008560635781e+02, 0.0, 3.704036341964502e+02, 0.0, 5.145495171417294e+02, 2.247394340321797e+02, 0.0, 0.0, 1.0);
+    distCoeffs_ = (cv::Mat1d(1, 5) << -0.356639678263282, 0.120685709311234, 0.0, 0.0, 0.0);
     cv::initUndistortRectifyMap(cameraMatrix_, distCoeffs_, cv::Mat(), cameraMatrix_, cv::Size(752, 480), CV_32FC1, map1_, map2_);
 
     this->run();
@@ -813,14 +815,18 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
 
     int n_pts = points_x.size();
 
+    // ROS_INFO_STREAM("here here here here " << n_pts);
+
     // bool id_good_fit[iter];
     // bool ini_inlier[iter][n_pts];
     // bool mask[iter][n_pts];
     float residual[iter][n_pts];
+    ROS_INFO_STREAM("here here here here " << n_pts);
     int inlier_cnt[iter];
 
     std::vector<std::vector<int>> inlier_x;
     std::vector<std::vector<int>> inlier_y;
+    
     inlier_x.resize(iter); // reserve 아니고 resize
     inlier_y.resize(iter);
 
@@ -831,7 +837,7 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
 
     float line_A[iter];
     float line_B[iter];
-
+    
     for (int i = 0; i < iter; ++i)
     {
         // id_good_fit[i] = false;
@@ -848,7 +854,7 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
         line_A[i] = 0.0;
         line_B[i] = 0.0;
     }
-
+    
     int n1 = 0;
     int n2 = 0;
     float x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0;
@@ -879,30 +885,55 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
         y2 = ptr_points_y[n2];
 
         line_A[m] = (y2 - y1) / (x2 - x1);
-        line_B[m] = -line_A[m] * x1 + y1;
-
-        double den = 1.0 / std::sqrt(line_A[m] * line_A[m] + 1.0);
-
-        for (int i = 0; i < n_pts; ++i)
+        std::cout << "line_A[m]: " << line_A[m] <<std::endl;
+        if ( !isinf(line_A[m]) )
         {
-            residual[m][i] = std::abs(line_A[m] * ptr_points_x[i] - ptr_points_y[i] + line_B[m]) * den;
+            line_B[m] = -line_A[m] * x1 + y1;
 
-            if (residual[m][i] < thr)
+            double den = 1.0 / std::sqrt(line_A[m] * line_A[m] + 1.0);
+
+            for (int i = 0; i < n_pts; ++i)
             {
-                // ini_inlier[m][i] = true;
-                // mask[m][i] = true;
-                inlier_x[m].push_back(ptr_points_x[i]);
-                inlier_y[m].push_back(ptr_points_y[i]);
-                inlier_cnt[m] += 1;
+                residual[m][i] = std::abs(line_A[m] * ptr_points_x[i] - ptr_points_y[i] + line_B[m]) * den;
+
+                if (residual[m][i] < thr)
+                {
+                    // ini_inlier[m][i] = true;
+                    // mask[m][i] = true;
+                    inlier_x[m].push_back(ptr_points_x[i]);
+                    inlier_y[m].push_back(ptr_points_y[i]);
+                    inlier_cnt[m] += 1;
+                }
             }
         }
+        else // isinf(line_A[m]
+        {
+            line_B[m] = INFINITY; //posible?
 
+            for (int i = 0; i < n_pts; ++i)
+            {
+                residual[m][i] = std::abs( x2 - ptr_points_x[i] ); //x2 와 x1이 같으니까 slope가 inf 겠지?
+
+                if (residual[m][i] < thr)
+                {
+                    // ini_inlier[m][i] = true;
+                    // mask[m][i] = true;
+                    inlier_x[m].push_back(ptr_points_x[i]);
+                    inlier_y[m].push_back(ptr_points_y[i]);
+                    inlier_cnt[m] += 1;
+                }
+            }
+        }
+        std::cout << "line_B[m]: " << line_B[m] <<std::endl;
+        
         // if ((inlier_cnt[m] - 1) > mini_inlier_)
         // {
         //     id_good_fit[m] = true;
         // }
     }
     
+    
+
     int max_inlier_cnt = 0;
     std::vector<int> max_inlier_cnt_index;
     max_inlier_cnt_index.reserve(100);
@@ -961,9 +992,13 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
         inlier_result_x.push_back(A(i,0));
         inlier_result_y.push_back(A(i,1));
     }
-    
+    std::cout << "before ransac svd" <<std::endl;
+    std::cout << "inlier_x.size(): " << inlier_x.size() << std::endl;
+    std::cout << "inlier_y.size(): " << inlier_y.size() << std::endl;
+    std::cout << "best_n_inlier: " << best_n_inlier << std::endl;
     Eigen::Vector3f t;
     Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    std::cout << "after ransac svd" <<std::endl;
     t = svd.matrixV().col(2);
         // std::cout << svd.matrixU() << std::endl;
         // std::cout << "***************" << std::endl;
@@ -978,12 +1013,18 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
     // // cout << "Its right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
 
     t = -t/t(1,0);
-
+    std::cout << t <<std::endl;
     // Eigen::Vector2f line;
     // line << t(0), t(2); //y = ax + b
     
     line_a.push_back(t(0));
     line_b.push_back(t(2));
+
+    for (int i=0; i<line_a.size(); ++i)
+    {
+        std::cout << "line a[" << i << "]" <<": " << line_a[i] <<std::endl;
+        std::cout << "line b[" << i << "]" <<": " << line_b[i] <<std::endl;
+    }
 
     float residual_leastsquare = 0.0;
     // int cnt_inlier = 0;
@@ -1027,6 +1068,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     cv::Mat img_channels[3];
     cv::Mat img_visual;
     cv::Mat img_gray_original;
+    cv::Mat img_distort;
     
     // dilate & erode
     cv::Mat img_threshold;
@@ -1038,6 +1080,8 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
 
     cv_ptr->image.copyTo(img_gray);
+    //for calibration
+    img_gray.copyTo(img_distort);
     
     cv::remap(img_gray, img_color_undist_, map1_, map2_, cv::INTER_LINEAR);
     // cv_ptr->image.copyTo(img_gray);
@@ -1065,8 +1109,9 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     bool flag_line_detect = false;
     
     std::vector<cv::Vec4f> lines;
-
+    
     fast_line_detector_->detect(img_gray, lines);
+
 
     cv::Mat img_zero = cv::Mat::zeros(n_row, n_col, CV_8UC1);
     fast_line_detector_->drawSegments(img_zero, lines);
@@ -1094,10 +1139,10 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // }
 
     // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
+    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
 
     // cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(7, 7), CV_8UC1));
+    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
 
     // bwlabel
     int n_label = cv::connectedComponentsWithStats(img_erode, object_label, stats, centroids, 8);
@@ -1201,11 +1246,17 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             }
         }
     }
+    cv::imshow("img kel", skel);
+    cv::waitKey(5);
+    if (points_x_.size() > n_row * n_col *0.5)
+    {
+        this->reset_vector();
+        return;
+    }
+
     // std::cout << points_x_.size() <<std::endl;
     // std::cout << points_y_.size() <<std::endl;
-    // cv::imshow("img input", skel);
-    // cv::waitKey(0);
-
+    
     int n_points = points_x_.size();
     // bool mask_inlier[n_points];
     // std::vector<int> points_x_tmp_;
@@ -1228,6 +1279,11 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // std::vector<int> points_x_tmp2_;
     // std::vector<int> points_y_tmp2_;
 
+    //     if (lines.size() == 0)
+    // {
+    //     ROS_INFO_STREAM("no line detected hoho");
+    // }
+
     // 4 line detection
     for (int i = 0; i < 4; ++i)
     {
@@ -1244,21 +1300,41 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             mask_inlier[q] = false;
         }
         int param_RANSAC_iter = 25;
-        int param_RANSAC_thr = 2;
+        int param_RANSAC_thr = 3;
         int param_RANSAC_mini_inlier = 30;
-
+        ROS_INFO_STREAM("no line detected hoho iter: "<<i);
         // std::cout << points_x_tmp_.size() << " " << points_y_tmp_.size() << std::endl;
+        if (n_pts_tmp > n_row * n_col)
+        {
+            ROS_INFO_STREAM("n_pts > n_row * n_col");
+            flag_line_detect = false;
+            exit(0);
+            break;
+        }
         ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_);
         // std::cout<< "line_a_: " << line_a_[0]<< "line_b_: " << line_b_[0]<<std::endl;
+        ROS_INFO_STREAM("no line detected haha iter: "<<i);
 
         ///////// visualization (from)
-        float points_x_tmp_min = *std::min_element(inlier_result_x_.begin(), inlier_result_x_.end());
-        float points_x_tmp_max = *std::max_element(inlier_result_x_.begin(), inlier_result_x_.end());
-        float points_y_tmp_min = line_a_[i] * points_x_tmp_min + line_b_[i];
-        float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];
-        cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
-        cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
-        cv::line(img_visual, p0,p1, cv::Scalar(255,0,255),1);
+        // slope inf에 대한 대처
+        if (std::abs(line_b_[i]) > 1e4)
+        {
+            float points_y_tmp_min = std::min_element(inlier_result_y_.begin(), inlier_result_y_.end()) - inlier_result_y_.begin();
+            float points_y_tmp_max = std::max_element(inlier_result_y_.begin(), inlier_result_y_.end()) - inlier_result_y_.begin();
+            cv::Point2f p0(inlier_result_x_[points_y_tmp_min], inlier_result_y_[points_y_tmp_min]);
+            cv::Point2f p1(inlier_result_x_[points_y_tmp_max], inlier_result_y_[points_y_tmp_max]);
+            cv::line(img_visual, p0, p1, cv::Scalar(255, 0, 255), 1);
+        }
+        else
+        {
+            float points_x_tmp_min = *std::min_element(inlier_result_x_.begin(), inlier_result_x_.end());
+            float points_x_tmp_max = *std::max_element(inlier_result_x_.begin(), inlier_result_x_.end());
+            float points_y_tmp_min = line_a_[i] * points_x_tmp_min + line_b_[i];
+            float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];
+            cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
+            cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
+            cv::line(img_visual, p0, p1, cv::Scalar(255, 0, 255), 1);
+        }
         ///////// visualization (to)
 
         for (int q = 0; q < n_pts_tmp; ++q)
@@ -1634,6 +1710,14 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     //     // exit(0);
     // }
 
+    /* for calibration (save image)
+    std::string image_folder = "/home/junhakim/mono_calibration/data3/";
+    std::string image_name = std::to_string(image_seq);
+    std::string save_path = image_folder + image_name + ".png";
+    std::cout << save_path << std::endl;
+    cv::imwrite(save_path, img_distort);
+    // */
+
     ROS_INFO_STREAM(">>>>>>>>>> "
                     << "Iter " << image_seq << " End <<<<<<<<<");
     image_seq += 1;
@@ -1655,6 +1739,8 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // cv::waitKey(0);
     // else
     cv::waitKey(5);
+
+
 
     reset_vector();
     
