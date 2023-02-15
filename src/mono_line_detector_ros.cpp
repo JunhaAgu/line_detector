@@ -668,7 +668,7 @@ void MonoLineDetectorROS::test()
 
             cv::imshow("img input", img_gray_original);
             // cv::imshow("img input", img_gray);
-            cv::waitKey(0);
+            // cv::waitKey(0);
         }
         else
         {
@@ -801,7 +801,7 @@ void MonoLineDetectorROS::test()
             // help_feat_ == next_feat_
 
             // cv::imshow("img input", img_visual);
-            // // cv::imshow("img input", img_gray);
+            // cv::imshow("img input", img_gray);
             // cv::waitKey(0);
 
             img_gray_original.copyTo(img0_);
@@ -851,7 +851,7 @@ void MonoLineDetectorROS::test()
     cv::circle(img_visual, help_feat_[2], 15, cv::Scalar(255, 0, 255), 1, 8, 0);
     cv::circle(img_visual, help_feat_[3], 20, cv::Scalar(255, 0, 255), 1, 8, 0);
     // }
-    cv::imshow("img input", img_visual);
+    // cv::imshow("img input", img_visual);
     // if (iter_test>143)
     // cv::waitKey(0);
     // else
@@ -1305,6 +1305,14 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             }
         }
     }
+    // for (int i=360; i<img_clone.rows; ++i)
+    // {
+    //     int i_ncols = i * img_clone.rows;
+    //     for (int j = 0; j < img_clone.rows; ++j)
+    //     {
+    //         *(ptr_img_clone + i_ncols + j) = 0;
+    //     }
+    // }
     ROS_INFO_STREAM("sum_obj: " << sum_object[0] << " " << sum_object[1] << " " << sum_object[2] << " " << sum_object[3]);
     ROS_INFO_STREAM("max_obj_pixel_idx: " << max_obj_pixel_idx);
     
@@ -1319,6 +1327,15 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     Thinning(img_clone, n_row, n_col);
     img_clone.copyTo(skel);
     uchar *ptr_skel = skel.ptr<uchar>(0);
+
+    // for (int i=360; i<skel.rows; ++i)
+    // {
+    //     int i_ncols = i * skel.cols;
+    //     for (int j = 0; j < skel.cols; ++j)
+    //     {
+    //         *(ptr_skel + i_ncols + j) = 0;
+    //     }
+    // }
 
     // double dt_toc = timer::toc(1); // milliseconds
     // ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
@@ -1632,7 +1649,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             ROS_INFO_STREAM(">>>>>>>>>> Initialization Complete <<<<<<<<<");
 
             // cv::imshow("img input", img_visual);
-            // // cv::imshow("img input", img_gray);
+            // cv::imshow("img input", img_gray);
             // cv::waitKey(0);
         }
         else
@@ -1855,15 +1872,16 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     cv::circle(img_visual, help_feat_[2], 15, cv::Scalar(255, 0, 255), 1, 8, 0);
     cv::circle(img_visual, help_feat_[3], 20, cv::Scalar(255, 0, 255), 1, 8, 0);
     // }
-    
     if(flag_cam_stream_==true)
     {
         cv::imshow("img input", img_visual);
         cv::waitKey(5);
     }
 
+
+
     reset_vector();
-    
+
     // Done.
 };
 
