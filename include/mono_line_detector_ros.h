@@ -59,6 +59,7 @@ private:
 // launch params
 private:
     bool flag_cam_live_;
+    bool flag_cam_stream_;
 // Subscribers
 private:
     ros::Subscriber sub_image_;

@@ -11,6 +11,7 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     
     // Check live data or not
     ros::param::get("~flag_cam_live", flag_cam_live_);
+    ros::param::get("~flag_cam_stream",flag_cam_stream_);
     ros::param::get("~image_dir", image_dir_);
     ros::param::get("~image_type", image_type_);
     ros::param::get("~image_hz", image_hz_);
@@ -262,6 +263,7 @@ void MonoLineDetectorROS::test()
 
     cv::split(img_zero, img_channels);
     img_channels[2].copyTo(img_gray);
+    cv::imshow("img lines", img_gray);
     uchar *ptr_img_gray = img_gray.ptr<uchar>(0);
     // cv::imshow("B", img_channels[0]);
     // cv::imshow("G", img_channels[1]);
@@ -280,10 +282,12 @@ void MonoLineDetectorROS::test()
     // }
 
     // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(15, 15), CV_8UC1));
+    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
+    cv::imshow("img dilate", img_dilate);	
 
     // cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(15, 15), CV_8UC1));
+    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
+    cv::imshow("img erode", img_erode);	
 
     // bwlabel
     int n_label = cv::connectedComponentsWithStats(img_erode, object_label, stats, centroids, 8);
@@ -346,6 +350,7 @@ void MonoLineDetectorROS::test()
             }
         }
     }
+    cv::imshow("img connectivity", img_clone);
     ROS_INFO_STREAM("sum_obj: " << sum_object[0] << " " << sum_object[1] << " " << sum_object[2] << " " << sum_object[3]);
     ROS_INFO_STREAM("max_obj_pixel_idx: " << max_obj_pixel_idx);
     
@@ -361,8 +366,8 @@ void MonoLineDetectorROS::test()
     img_clone.copyTo(skel);
     uchar *ptr_skel = skel.ptr<uchar>(0);
 
-    double dt_toc = timer::toc(1); // milliseconds
-    ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
+    // double dt_toc = timer::toc(1); // milliseconds
+    // ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
 
     // if (dt_toc>30)
     // {
@@ -387,10 +392,16 @@ void MonoLineDetectorROS::test()
             }
         }
     }
+    cv::imshow("img kel", skel);	
+    cv::waitKey(5);	
+    if (points_x_.size() > n_row * n_col *0.5)	
+    {	
+        this->reset_vector();	
+        return;	
+    }
+
     // std::cout << points_x_.size() <<std::endl;
     // std::cout << points_y_.size() <<std::endl;
-    // cv::imshow("img input", skel);
-    // cv::waitKey(0);
 
     int n_points = points_x_.size();
     // bool mask_inlier[n_points];
@@ -429,22 +440,39 @@ void MonoLineDetectorROS::test()
         {
             mask_inlier[q] = false;
         }
-        int param_RANSAC_iter = 25;
-        int param_RANSAC_thr = 2;
-        int param_RANSAC_mini_inlier = 30;
 
         // std::cout << points_x_tmp_.size() << " " << points_y_tmp_.size() << std::endl;
+        if (n_pts_tmp > n_row * n_col)	
+        {	
+            ROS_INFO_STREAM("n_pts > n_row * n_col");	
+            flag_line_detect = false;	
+            exit(0);	
+            break;	
+        }
         ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_);
         // std::cout<< "line_a_: " << line_a_[0]<< "line_b_: " << line_b_[0]<<std::endl;
-
-        ///////// visualization (from)
-        float points_x_tmp_min = *std::min_element(inlier_result_x_.begin(), inlier_result_x_.end());
-        float points_x_tmp_max = *std::max_element(inlier_result_x_.begin(), inlier_result_x_.end());
-        float points_y_tmp_min = line_a_[i] * points_x_tmp_min + line_b_[i];
-        float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];
-        // cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
-        // cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
-        // cv::line(img_visual, p0,p1, cv::Scalar(255,0,255),1);
+        ROS_INFO_STREAM("no line detected haha iter: "<<i);
+        
+        ///////// visualization (from)	
+        // slope inf에 대한 대처	
+        if (std::abs(line_b_[i]) > 1e4)	
+        {	
+            float points_y_tmp_min = std::min_element(inlier_result_y_.begin(), inlier_result_y_.end()) - inlier_result_y_.begin();	
+            float points_y_tmp_max = std::max_element(inlier_result_y_.begin(), inlier_result_y_.end()) - inlier_result_y_.begin();	
+            cv::Point2f p0(inlier_result_x_[points_y_tmp_min], inlier_result_y_[points_y_tmp_min]);	
+            cv::Point2f p1(inlier_result_x_[points_y_tmp_max], inlier_result_y_[points_y_tmp_max]);	
+            cv::line(img_visual, p0, p1, cv::Scalar(255, 0, 255), 1);	
+        }	
+        else	
+        {	
+            float points_x_tmp_min = *std::min_element(inlier_result_x_.begin(), inlier_result_x_.end());	
+            float points_x_tmp_max = *std::max_element(inlier_result_x_.begin(), inlier_result_x_.end());	
+            float points_y_tmp_min = line_a_[i] * points_x_tmp_min + line_b_[i];	
+            float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];	
+            cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);	
+            cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);	
+            cv::line(img_visual, p0, p1, cv::Scalar(255, 0, 255), 1);	
+        }	
         ///////// visualization (to)
 
         for (int q = 0; q < n_pts_tmp; ++q)
@@ -638,7 +666,7 @@ void MonoLineDetectorROS::test()
             }
             ROS_INFO_STREAM(">>>>>>>>>> Initialization Complete <<<<<<<<<");
 
-            cv::imshow("img input", img_visual);
+            cv::imshow("img input", img_gray_original);
             // cv::imshow("img input", img_gray);
             cv::waitKey(0);
         }
@@ -648,46 +676,97 @@ void MonoLineDetectorROS::test()
             help_feat_.resize(0);
             // check prev_feat vs. help_feat
 
-            std::vector<float> diff_prev_and_help;
-            
-            // 이건 matching 문제가 있다.
-            // for (int i = 0; i < prev_feat_.size(); ++i)
-            // {
-            //     diff_prev_and_help.resize(0);
-            //     for (int j = 0; j < next_feat_.size(); ++j)
-            //     {
-            //         float diff_norm = std::sqrt( SQUARE(prev_feat_[i].x - next_feat_[j].x) + SQUARE(prev_feat_[i].y - next_feat_[j].y) );
-            //         diff_prev_and_help.push_back(diff_norm);
-            //         std::cout << diff_norm << " ";
-            //     }
-            //     std::cout << std::endl;
-            //     int diff_min_idx = std::min_element(diff_prev_and_help.begin(), diff_prev_and_help.end()) - diff_prev_and_help.begin();
-            //     //check 할당도 안했는데 [~]로 대입해주려고 하면 안됨.
-            //     help_feat_.push_back(next_feat_[diff_min_idx]);
-            //     std::cout << diff_min_idx <<std::endl;
-            //     std::cout << next_feat_[diff_min_idx] <<std::endl;
-            //     std::cout << help_feat_[i] <<std::endl;
+            std::cout << "next_feat_[0]" << " " << next_feat_[0] << std::endl;	
+            std::cout << "next_feat_[1]" << " " << next_feat_[1] << std::endl;	
+            std::cout << "next_feat_[2]" << " " << next_feat_[2] << std::endl;	
+            std::cout << "next_feat_[3]" << " " << next_feat_[3] << std::endl;	
+            // 왼쪽 위 -> 왼쪽 아래 -> 오른쪽 아래 -> 오른쪽 위 : 순서대로 id0 id1 id2 id3	
+            std::vector<float> pts_x;	
+            std::vector<float> pts_y;	
+            for (int i=0; i<4; ++i)	
+            {	
+                pts_x.push_back(next_feat_[i].x);	
+                pts_y.push_back(next_feat_[i].y);	
+            }	
+            int pts_x_max_idx = std::max_element(pts_x.begin(),pts_x.end()) - pts_x.begin();	
+            pts_x.erase(pts_x.begin()+pts_x_max_idx);	
+            pts_y.erase(pts_y.begin()+pts_x_max_idx);	
+            pts_x_max_idx = std::max_element(pts_x.begin(),pts_x.end()) - pts_x.begin();	
+            pts_x.erase(pts_x.begin()+pts_x_max_idx);	
+            pts_y.erase(pts_y.begin()+pts_x_max_idx);	
+            int pts_y_min_idx = std::min_element(pts_y.begin(),pts_y.end()) - pts_y.begin();	
+            cv::Point2f pts_id0_tmp(pts_x[pts_y_min_idx], pts_y[pts_y_min_idx]);	
+            help_feat_.push_back(pts_id0_tmp);	
+            int pts_y_max_idx = std::max_element(pts_y.begin(),pts_y.end()) - pts_y.begin();	
+            cv::Point2f pts_id1_tmp(pts_x[pts_y_max_idx], pts_y[pts_y_max_idx]);	
+            help_feat_.push_back(pts_id1_tmp);	
+            pts_x.resize(0);	
+            pts_y.resize(0);	
+            for (int i=0; i<4; ++i)	
+            {	
+                pts_x.push_back(next_feat_[i].x);	
+                pts_y.push_back(next_feat_[i].y);	
+            }	
+            int pts_x_min_idx = std::min_element(pts_x.begin(),pts_x.end()) - pts_x.begin();	
+            pts_x.erase(pts_x.begin()+pts_x_min_idx);	
+            pts_y.erase(pts_y.begin()+pts_x_min_idx);	
+            pts_x_min_idx = std::min_element(pts_x.begin(),pts_x.end()) - pts_x.begin();	
+            pts_x.erase(pts_x.begin()+pts_x_min_idx);	
+            pts_y.erase(pts_y.begin()+pts_x_min_idx);	
+            pts_y_max_idx = std::max_element(pts_y.begin(),pts_y.end()) - pts_y.begin();	
+            cv::Point2f pts_id2_tmp(pts_x[pts_y_max_idx], pts_y[pts_y_max_idx]);	
+            help_feat_.push_back(pts_id2_tmp);	
+            pts_y_min_idx = std::min_element(pts_y.begin(),pts_y.end()) - pts_y.begin();	
+            cv::Point2f pts_id3_tmp(pts_x[pts_y_min_idx], pts_y[pts_y_min_idx]);	
+            help_feat_.push_back(pts_id3_tmp);	
+            std::cout << "help_feat_[0]" << " " << help_feat_[0] << std::endl;	
+            std::cout << "help_feat_[1]" << " " << help_feat_[1] << std::endl;	
+            std::cout << "help_feat_[2]" << " " << help_feat_[2] << std::endl;	
+            std::cout << "help_feat_[3]" << " " << help_feat_[3] << std::endl;	
+            next_feat_.resize(0);	
+            next_feat_.push_back(help_feat_[0]);	
+            next_feat_.push_back(help_feat_[1]);	
+            next_feat_.push_back(help_feat_[2]);	
+            next_feat_.push_back(help_feat_[3]);	
+            // ///////////////////////////////////////////////////////////////////	
+            // help_feat_.resize(0);	
+            // std::vector<float> diff_prev_and_help;	
+            	
+            // // 이건 matching 문제가 있다.	
+            // // for (int i = 0; i < prev_feat_.size(); ++i)	
+            // // {	
+            // //     diff_prev_and_help.resize(0);	
+            // //     for (int j = 0; j < next_feat_.size(); ++j)	
+            // //     {	
+            // //         float diff_norm = std::sqrt( SQUARE(prev_feat_[i].x - next_feat_[j].x) + SQUARE(prev_feat_[i].y - next_feat_[j].y) );	
+            // //         diff_prev_and_help.push_back(diff_norm);	
+            // //         std::cout << diff_norm << " ";	
+            // //     }	
+            // //     std::cout << std::endl;	
+            // //     int diff_min_idx = std::min_element(diff_prev_and_help.begin(), diff_prev_and_help.end()) - diff_prev_and_help.begin();	
+            // //     //check 할당도 안했는데 [~]로 대입해주려고 하면 안됨.	
+            // //     help_feat_.push_back(next_feat_[diff_min_idx]);	
+            // //     std::cout << diff_min_idx <<std::endl;	
+            // //     std::cout << next_feat_[diff_min_idx] <<std::endl;	
+            // //     std::cout << help_feat_[i] <<std::endl;	
+            // // }	
+            // std::vector<float> diff_norm;	
+            	
+            // for (int k = 0; k < perm_.size(); ++k)	
+            // {	
+            //     float diff_norm_sum_tmp = 0;	
+            //     for (int p=0; p<4 ; ++p)	
+            //     {	
+            //         int perm_k_p = perm_[k][p];	
+            //         diff_norm_sum_tmp += std::sqrt( SQUARE(prev_feat_[p].x - next_feat_[perm_k_p].x) + SQUARE(prev_feat_[p].y - next_feat_[perm_k_p].y) );	
+            //     }	
+            //     diff_norm.push_back(diff_norm_sum_tmp);	
+            // }	
+            // int diff_min_idx = std::min_element(diff_norm.begin(), diff_norm.end()) - diff_norm.begin();	
+            // for (int i=0; i<4; ++i)	
+            // {	
+            //     help_feat_.push_back(next_feat_[perm_[diff_min_idx][i]]);	
             // }
-
-
-            std::vector<float> diff_norm;
-            
-            for (int k = 0; k < perm_.size(); ++k)
-            {
-                float diff_norm_sum_tmp = 0;
-                for (int p=0; p<4 ; ++p)
-                {
-                    int perm_k_p = perm_[k][p];
-                    diff_norm_sum_tmp += std::sqrt( SQUARE(prev_feat_[p].x - next_feat_[perm_k_p].x) + SQUARE(prev_feat_[p].y - next_feat_[perm_k_p].y) );
-                }
-                diff_norm.push_back(diff_norm_sum_tmp);
-            }
-            int diff_min_idx = std::min_element(diff_norm.begin(), diff_norm.end()) - diff_norm.begin();
-
-            for (int i=0; i<4; ++i)
-            {
-                help_feat_.push_back(next_feat_[perm_[diff_min_idx][i]]);
-            }
             // exit(0);
             
 
@@ -738,14 +817,16 @@ void MonoLineDetectorROS::test()
     else if (flag_line_detect == false)
     {
         ROS_INFO_STREAM("4 line detection fail");
+
+        flag_init_ = false;
     }
 
     // cv::imshow("img input", img_visual);
     // // cv::imshow("img input", img_gray);
     // cv::waitKey(0);
 
-    // double dt_toc = timer::toc(1); // milliseconds
-    // ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
+    double dt_toc = timer::toc(1); // milliseconds
+    ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
 
     // if (dt_toc>30)
     // {
@@ -765,10 +846,10 @@ void MonoLineDetectorROS::test()
 
     // for (int i = 0; i < help_feat_.size(); ++i)
     // {
-    cv::circle(img_visual, help_feat_[0], 4, cv::Scalar(255, 0, 255), 1, 8, 0);
-    cv::circle(img_visual, help_feat_[1], 6, cv::Scalar(255, 0, 255), 1, 8, 0);
-    cv::circle(img_visual, help_feat_[2], 8, cv::Scalar(255, 0, 255), 1, 8, 0);
-    cv::circle(img_visual, help_feat_[3], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(img_visual, help_feat_[0], 5, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(img_visual, help_feat_[1], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(img_visual, help_feat_[2], 15, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(img_visual, help_feat_[3], 20, cv::Scalar(255, 0, 255), 1, 8, 0);
     // }
     cv::imshow("img input", img_visual);
     // if (iter_test>143)
@@ -1083,6 +1164,13 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
 
     cv_ptr->image.copyTo(img_gray);
+
+    if (flag_cam_stream_==true)
+    {
+        cv::imshow("img original", img_gray);
+        cv::waitKey(5);
+    }
+
     //for calibration
     img_gray.copyTo(img_distort);
     
@@ -1140,6 +1228,15 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     //         }
     //     }
     // }
+
+    for (int i = 360; i < n_row; ++i)
+    {
+        int i_ncols = i * n_col;
+        for (int j = 0; j < n_col; ++j)
+        {
+                *(ptr_img_gray + i_ncols + j) = 0;
+        }
+    }
 
     // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
     cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
@@ -1249,8 +1346,13 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             }
         }
     }
-    cv::imshow("img kel", skel);
-    cv::waitKey(5);
+
+    if (flag_cam_stream_==true)
+    {
+        cv::imshow("img kel", skel);
+        cv::waitKey(5);
+    }
+
     if (points_x_.size() > n_row * n_col *0.5)
     {
         this->reset_vector();
@@ -1302,9 +1404,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
         {
             mask_inlier[q] = false;
         }
-        int param_RANSAC_iter = 25;
-        int param_RANSAC_thr = 3;
-        int param_RANSAC_mini_inlier = 30;
+
         ROS_INFO_STREAM("no line detected hoho iter: "<<i);
         // std::cout << points_x_tmp_.size() << " " << points_y_tmp_.size() << std::endl;
         if (n_pts_tmp > n_row * n_col)
@@ -1755,13 +1855,12 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     cv::circle(img_visual, help_feat_[2], 15, cv::Scalar(255, 0, 255), 1, 8, 0);
     cv::circle(img_visual, help_feat_[3], 20, cv::Scalar(255, 0, 255), 1, 8, 0);
     // }
-    cv::imshow("img input", img_visual);
-    // if (image_seq>143)
-    // cv::waitKey(0);
-    // else
-    cv::waitKey(5);
-
-
+    
+    if(flag_cam_stream_==true)
+    {
+        cv::imshow("img input", img_visual);
+        cv::waitKey(5);
+    }
 
     reset_vector();
     
