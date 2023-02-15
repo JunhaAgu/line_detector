@@ -1,6 +1,9 @@
 <launch>
+    <include ns="bluefox" file="$(find bluefox)/launch/bluefox_multiple.launch" />
+
     <arg name="topicname_image"                 default="/0/image_raw"/>
     <arg name="flag_cam_live"                   default="true"/>
+    <arg name="flag_cam_stream"                 default="false"/>
     <arg name="image_dir"                       default="/home/junhakim/mono_calibration/data2/"/>
     <arg name="image_type"                      default="png"/>
     <arg name="image_hz"                        default="20"/>
@@ -8,6 +11,7 @@
     <node pkg="line_detection" name="line_detector_node" type="line_detector_node" output="screen">
         <param name="topicname_image" type="string" value="$(arg topicname_image)"/>
         <param name="flag_cam_live" type="bool" value="$(arg flag_cam_live)"/>
+        <param name="flag_cam_stream" type="bool" value="$(arg flag_cam_stream)"/>
         <param name="image_dir" type="string" value="$(arg image_dir)"/>
         <param name="image_type" type="string" value="$(arg image_type)"/>
         <param name="image_hz" type="int" value="$(arg image_hz)"/>

@@ -11,6 +11,7 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     
     // Check live data or not
     ros::param::get("~flag_cam_live", flag_cam_live_);
+    ros::param::get("~flag_cam_stream",flag_cam_stream_);
     ros::param::get("~image_dir", image_dir_);
     ros::param::get("~image_type", image_type_);
     ros::param::get("~image_hz", image_hz_);
@@ -638,9 +639,9 @@ void MonoLineDetectorROS::test()
             }
             ROS_INFO_STREAM(">>>>>>>>>> Initialization Complete <<<<<<<<<");
 
-            cv::imshow("img input", img_visual);
+            // cv::imshow("img input", img_visual);
             // cv::imshow("img input", img_gray);
-            cv::waitKey(0);
+            // cv::waitKey(0);
         }
         else
         {
@@ -722,7 +723,7 @@ void MonoLineDetectorROS::test()
             // help_feat_ == next_feat_
 
             // cv::imshow("img input", img_visual);
-            // // cv::imshow("img input", img_gray);
+            // cv::imshow("img input", img_gray);
             // cv::waitKey(0);
 
             img_gray_original.copyTo(img0_);
@@ -770,7 +771,7 @@ void MonoLineDetectorROS::test()
     cv::circle(img_visual, help_feat_[2], 8, cv::Scalar(255, 0, 255), 1, 8, 0);
     cv::circle(img_visual, help_feat_[3], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
     // }
-    cv::imshow("img input", img_visual);
+    // cv::imshow("img input", img_visual);
     // if (iter_test>143)
     // cv::waitKey(0);
     // else
@@ -1141,6 +1142,15 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     //     }
     // }
 
+    for (int i = 360; i < n_row; ++i)
+    {
+        int i_ncols = i * n_col;
+        for (int j = 0; j < n_col; ++j)
+        {
+                *(ptr_img_gray + i_ncols + j) = 0;
+        }
+    }
+
     // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
     cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
 
@@ -1208,6 +1218,14 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             }
         }
     }
+    // for (int i=360; i<img_clone.rows; ++i)
+    // {
+    //     int i_ncols = i * img_clone.rows;
+    //     for (int j = 0; j < img_clone.rows; ++j)
+    //     {
+    //         *(ptr_img_clone + i_ncols + j) = 0;
+    //     }
+    // }
     ROS_INFO_STREAM("sum_obj: " << sum_object[0] << " " << sum_object[1] << " " << sum_object[2] << " " << sum_object[3]);
     ROS_INFO_STREAM("max_obj_pixel_idx: " << max_obj_pixel_idx);
     
@@ -1222,6 +1240,15 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     Thinning(img_clone, n_row, n_col);
     img_clone.copyTo(skel);
     uchar *ptr_skel = skel.ptr<uchar>(0);
+
+    // for (int i=360; i<skel.rows; ++i)
+    // {
+    //     int i_ncols = i * skel.cols;
+    //     for (int j = 0; j < skel.cols; ++j)
+    //     {
+    //         *(ptr_skel + i_ncols + j) = 0;
+    //     }
+    // }
 
     // double dt_toc = timer::toc(1); // milliseconds
     // ROS_INFO_STREAM("total time :" << dt_toc << " [ms]");
@@ -1249,8 +1276,18 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             }
         }
     }
-    cv::imshow("img kel", skel);
-    cv::waitKey(5);
+    // std::cout << points_x_.size() << std::endl;
+    // if (points_x_.size() == 0)
+    // {
+    //     return;
+    // }
+
+    if (flag_cam_stream_==true)
+    {
+        cv::imshow("img kel", skel);
+        cv::waitKey(5);
+    }
+    
     if (points_x_.size() > n_row * n_col *0.5)
     {
         this->reset_vector();
@@ -1532,7 +1569,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             ROS_INFO_STREAM(">>>>>>>>>> Initialization Complete <<<<<<<<<");
 
             // cv::imshow("img input", img_visual);
-            // // cv::imshow("img input", img_gray);
+            // cv::imshow("img input", img_gray);
             // cv::waitKey(0);
         }
         else
@@ -1755,16 +1792,15 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     cv::circle(img_visual, help_feat_[2], 15, cv::Scalar(255, 0, 255), 1, 8, 0);
     cv::circle(img_visual, help_feat_[3], 20, cv::Scalar(255, 0, 255), 1, 8, 0);
     // }
-    cv::imshow("img input", img_visual);
-    // if (image_seq>143)
-    // cv::waitKey(0);
-    // else
-    cv::waitKey(5);
 
-
+    if(flag_cam_stream_==true)
+    {
+        cv::imshow("img input", img_visual);
+        cv::waitKey(5);
+    }
 
     reset_vector();
-    
+
     // Done.
 };
 
