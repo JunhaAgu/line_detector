@@ -115,7 +115,7 @@ private:
     
     //ransac
     param_RANSAC param_RANSAC_;
-    std::random_device rd;
+    std::random_device rd_;
     std::mt19937 gen_;
 
     //next iteration
