@@ -38,9 +38,12 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     line_detector_param_.canny_thr_l_ = UserParam_->line_detector_param_.canny_thr_l_;
     line_detector_param_.line_length_ = UserParam_->line_detector_param_.line_length_;
     
-    ransac_param_.iter = UserParam_->ransac_param_.iter_;
-    ransac_param_.thr = UserParam_->ransac_param_.thr_;
-    ransac_param_.mini_inlier = UserParam_->ransac_param_.mini_inlier_;
+    ransac_param_.iter_ = UserParam_->ransac_param_.iter_;
+    ransac_param_.thr_ = UserParam_->ransac_param_.thr_;
+    ransac_param_.mini_inlier_ = UserParam_->ransac_param_.mini_inlier_;
+
+    //Class Img
+    Img_ = std::make_unique<IMG>(UserParam_);
 
     flag_init_ = false;
 
@@ -901,9 +904,9 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
     int* ptr_points_x = points_x.data();
     int* ptr_points_y = points_y.data();
 
-    int iter = ransac_param_.iter;
-    float thr = ransac_param_.thr;
-    int mini_inlier = ransac_param_.mini_inlier;
+    int iter = ransac_param_.iter_;
+    float thr = ransac_param_.thr_;
+    int mini_inlier = ransac_param_.mini_inlier_;
 
     int n_pts = points_x.size();
 
@@ -1122,81 +1125,23 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
 
     ROS_INFO_STREAM(">>>>>>>>>> " << "Iter " << image_seq <<" Start <<<<<<<<<");
 
+    std::string window_name;
+
     // input image
-    cv::Mat img_color;
-    cv::Mat img_gray;
-    cv::Mat img_channels[3];
-    cv::Mat img_visual;
-    cv::Mat img_gray_original;
-    cv::Mat img_distort;
+    Img_->receiveImageMsg(msg);
     
-    // dilate & erode
-    cv::Mat img_threshold;
-    cv::Mat img_dilate;
-    cv::Mat img_erode;
-
-    cv_bridge::CvImagePtr cv_ptr;
-    cv_ptr = cv_bridge::toCvCopy(msg, msg->encoding);
-
-    cv_ptr->image.copyTo(img_gray);
-
-    //visualization
-    // if (flag_cam_stream_==true)
-    // {
-    //     cv::imshow("img original", img_gray);
-    //     cv::waitKey(5);
-    // }
-
-    //for calibration
-    img_gray.copyTo(img_distort);
+    int n_row = Img_->n_row_;
+    int n_col = Img_->n_col_;
+    Img_->undistImage();
     
-    cv::remap(img_gray, img_color_undist_, map1_, map2_, cv::INTER_LINEAR);
-    // cv_ptr->image.copyTo(img_gray);
-    // cv::cvtColor(img_color_undist_, img_gray, CV_BGR2GRAY);
-
-    img_color_undist_.copyTo(img_gray);
-
-    //cvtColor 없으면 안되는걸 봐서 img_gray가 CV_GRAY가 아니다?
-    // cv::cvtColor(img_color, img_gray, CV_BGR2GRAY);
-    img_gray.convertTo(img_gray, CV_8UC1);
-    img_gray.convertTo(img_visual, CV_8UC1);
-    img_gray.convertTo(img_gray_original, CV_8UC1);
-
-    int n_row = img_gray.rows;
-    int n_col = img_gray.cols;
-
-    // bwlabel
-    cv::Mat object_label = cv::Mat::zeros(n_row, n_col, CV_32SC1);
-    int *ptr_object_label = object_label.ptr<int>(0);
-    cv::Mat stats, centroids;
-    std::vector<int> sum_object;
-    cv::Mat img_clone = cv::Mat::zeros(n_row, n_col, CV_8UC1);
-    uchar *ptr_img_clone = img_clone.ptr<uchar>(0);
+    // line detection
+    Img_->detectLines();
 
     // flag whether lines are detected or not
     bool flag_line_detect = false;
-    
-    std::vector<cv::Vec4f> lines;
-    
-    // line detection
-    fast_line_detector_->detect(img_gray, lines);
-
-    // draw lines on image
-    cv::Mat img_zero = cv::Mat::zeros(n_row, n_col, CV_8UC1);
-    fast_line_detector_->drawSegments(img_zero, lines);
-
-    // cv::imshow("img input", img_zero);
-    // cv::waitKey(0);
-
-    // BGR중 3번째
-    cv::split(img_zero, img_channels);
-    img_channels[2].copyTo(img_gray);
-    uchar *ptr_img_gray = img_gray.ptr<uchar>(0);
-    // cv::imshow("B", img_channels[0]);
-    // cv::imshow("G", img_channels[1]);
-    // cv::imshow("R", img_channels[2]);
 
     // manipulator쪽 line 제거
+    uchar *ptr_img_gray = Img_->img_gray_.ptr<uchar>(0);
     for (int i = 360; i < n_row; ++i)
     {
         int i_ncols = i * n_col;
@@ -1209,88 +1154,20 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     //visualization
     if (flag_cam_stream_==true)
     {
-        cv::imshow("img lines", img_gray);
-        cv::waitKey(5);
+        window_name = "img lines";
+        Img_->visualizeImage(window_name, Img_->img_gray_);
     }
 
-    // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::dilate(img_gray, img_dilate, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
+    Img_->dilateImage();
 
-    // cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::erode(img_dilate, img_erode, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
+    Img_->erodeImage();
 
     // bwlabel
-    int n_label = cv::connectedComponentsWithStats(img_erode, object_label, stats, centroids, 8);
-    if (n_label == 0)
-    {
-        ROS_INFO_STREAM("There is no connectivity");
-        return;
-    }
-
-    int obj_left;
-    int obj_top;
-    int obj_width;
-    int obj_height;
-
-    for (int object_idx = 0; object_idx < n_label; ++object_idx)
-    {
-        // object_idx=0 -> background
-        if (object_idx == 0)
-        {
-            sum_object.push_back(0);
-            continue;
-        }
-        int cnt_obj_pixel = 0;
-        // object_area_row_.resize(0);
-        // object_area_col_.resize(0);
-        obj_left    = stats.at<int>(object_idx, cv::CC_STAT_LEFT);
-        obj_top     = stats.at<int>(object_idx, cv::CC_STAT_TOP);
-        obj_width   = stats.at<int>(object_idx, cv::CC_STAT_WIDTH);
-        obj_height  = stats.at<int>(object_idx, cv::CC_STAT_HEIGHT);
-
-        for (int i = obj_top; i < obj_top + obj_height; ++i)
-        {
-            int i_ncols = i * n_col;
-            for (int j = obj_left; j < obj_left + obj_width; ++j)
-            {
-                if (*(ptr_object_label + i_ncols + j) == object_idx)
-                {
-                    // object_area_row_.push_back(i);
-                    // object_area_col_.push_back(j);
-                    cnt_obj_pixel += 1;
-                }
-            }
-        }
-        sum_object.push_back(cnt_obj_pixel);
-    }
-    int max_obj_pixel_idx = max_element(sum_object.begin(), sum_object.end()) - sum_object.begin();
-
-    obj_left    = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_LEFT);
-    obj_top     = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_TOP);
-    obj_width   = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_WIDTH);
-    obj_height  = stats.at<int>(max_obj_pixel_idx, cv::CC_STAT_HEIGHT);
-    for (int i = obj_top; i < obj_top + obj_height; ++i)
-    {
-        int i_ncols = i * n_col;
-        for (int j = obj_left; j < obj_left + obj_width; ++j)
-        {
-            if (*(ptr_object_label + i_ncols + j) == max_obj_pixel_idx)
-            {
-                *(ptr_img_clone + i_ncols + j) = 255;
-            }
-        }
-    }
-
-    ROS_INFO_STREAM("sum_obj: " << sum_object[0] << " " << sum_object[1] << " " << sum_object[2] << " " << sum_object[3]);
-    ROS_INFO_STREAM("max_obj_pixel_idx: " << max_obj_pixel_idx);
+    Img_->connectBinImage();
     
-    // skel
-    cv::Mat skel = cv::Mat::zeros(n_row, n_col, CV_8UC1); //(img_clone.size(), CV_8UC1, cv::Scalar(0));
+    Img_->skeletonizeImage();
 
-    // cv::ximgproc::thinning(img_clone, skel);
-    Thinning(img_clone, n_row, n_col);
-    img_clone.copyTo(skel);
-    uchar *ptr_skel = skel.ptr<uchar>(0);
+    uchar *ptr_skel = Img_->skel_.ptr<uchar>(0);
 
     for (int i = 0; i < n_row; ++i)
     {
@@ -1309,8 +1186,8 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // visualization
     if (flag_cam_stream_==true)
     {
-        cv::imshow("img kel", skel);
-        cv::waitKey(5);
+        window_name = "img kel";
+        Img_->visualizeImage(window_name, Img_->skel_);
     }
 
     // return condition - too many pixels
@@ -1367,7 +1244,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             float points_y_tmp_max = std::max_element(inlier_result_y_.begin(), inlier_result_y_.end()) - inlier_result_y_.begin();
             cv::Point2f p0(inlier_result_x_[points_y_tmp_min], inlier_result_y_[points_y_tmp_min]);
             cv::Point2f p1(inlier_result_x_[points_y_tmp_max], inlier_result_y_[points_y_tmp_max]);
-            cv::line(img_visual, p0, p1, cv::Scalar(255, 0, 255), 1);
+            cv::line(Img_->img_visual_, p0, p1, cv::Scalar(255, 0, 255), 1);
         }
         else
         {
@@ -1377,7 +1254,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             float points_y_tmp_max = line_a_[i] * points_x_tmp_max + line_b_[i];
             cv::Point2f p0(points_x_tmp_min, points_y_tmp_min);
             cv::Point2f p1(points_x_tmp_max, points_y_tmp_max);
-            cv::line(img_visual, p0, p1, cv::Scalar(255, 0, 255), 1);
+            cv::line(Img_->img_visual_, p0, p1, cv::Scalar(255, 0, 255), 1);
         }
         ///////// visualization (to)
         
@@ -1629,7 +1506,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             next_feat_.push_back(help_feat_[3]);
             ///////////////////////////////////////////////////////////////////
             
-            img_gray_original.copyTo(img0_);
+            Img_->img_gray_original_.copyTo(img0_);
             prev_feat_.resize(0);
             for (int i = 0; i < next_feat_.size(); ++i)
             {
@@ -1768,12 +1645,12 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             int size_rec_half3 = 15;
             int size_rec_half4 = 20;
 
-            cv::rectangle(img_visual, cv::Rect(cv::Point(prev_feat_[0].x-size_rec_half1, prev_feat_[0].y-size_rec_half1), cv::Point(prev_feat_[0].x+size_rec_half1, prev_feat_[0].y+size_rec_half1)), cv::Scalar(255, 0, 255), 1, 8, 0);
-            cv::rectangle(img_visual, cv::Rect(cv::Point(prev_feat_[1].x-size_rec_half2, prev_feat_[1].y-size_rec_half2), cv::Point(prev_feat_[1].x+size_rec_half2, prev_feat_[1].y+size_rec_half2)), cv::Scalar(255, 0, 255), 1, 8, 0);
-            cv::rectangle(img_visual, cv::Rect(cv::Point(prev_feat_[2].x-size_rec_half3, prev_feat_[2].y-size_rec_half3), cv::Point(prev_feat_[2].x+size_rec_half3, prev_feat_[2].y+size_rec_half3)), cv::Scalar(255, 0, 255), 1, 8, 0);
-            cv::rectangle(img_visual, cv::Rect(cv::Point(prev_feat_[3].x-size_rec_half4, prev_feat_[3].y-size_rec_half4), cv::Point(prev_feat_[3].x+size_rec_half4, prev_feat_[3].y+size_rec_half4)), cv::Scalar(255, 0, 255), 1, 8, 0);
+            cv::rectangle(Img_->img_visual_, cv::Rect(cv::Point(prev_feat_[0].x-size_rec_half1, prev_feat_[0].y-size_rec_half1), cv::Point(prev_feat_[0].x+size_rec_half1, prev_feat_[0].y+size_rec_half1)), cv::Scalar(255, 0, 255), 1, 8, 0);
+            cv::rectangle(Img_->img_visual_, cv::Rect(cv::Point(prev_feat_[1].x-size_rec_half2, prev_feat_[1].y-size_rec_half2), cv::Point(prev_feat_[1].x+size_rec_half2, prev_feat_[1].y+size_rec_half2)), cv::Scalar(255, 0, 255), 1, 8, 0);
+            cv::rectangle(Img_->img_visual_, cv::Rect(cv::Point(prev_feat_[2].x-size_rec_half3, prev_feat_[2].y-size_rec_half3), cv::Point(prev_feat_[2].x+size_rec_half3, prev_feat_[2].y+size_rec_half3)), cv::Scalar(255, 0, 255), 1, 8, 0);
+            cv::rectangle(Img_->img_visual_, cv::Rect(cv::Point(prev_feat_[3].x-size_rec_half4, prev_feat_[3].y-size_rec_half4), cv::Point(prev_feat_[3].x+size_rec_half4, prev_feat_[3].y+size_rec_half4)), cv::Scalar(255, 0, 255), 1, 8, 0);
 
-            cv::calcOpticalFlowPyrLK(img0_, img_gray_original, prev_feat_, help_feat_, status, err, cv::Size(51, 51), 0,
+            cv::calcOpticalFlowPyrLK(img0_, Img_->img_gray_original_, prev_feat_, help_feat_, status, err, cv::Size(51, 51), 0,
                                      {}, 4); // use OPTFLOW_USE_INITIAL_FLOW
 
             std::cout << "tracked_current_feat_[id0]" << " " << help_feat_[0] << std::endl;
@@ -1787,7 +1664,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             // // cv::imshow("img input", img_gray);
             // cv::waitKey(0);
 
-            img_gray_original.copyTo(img0_);
+            Img_->img_gray_original_.copyTo(img0_);
             prev_feat_.resize(0);
             for (int i = 0; i < help_feat_.size(); ++i)
             {
@@ -1808,7 +1685,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     // // cv::imshow("img input", img_gray);
     // cv::waitKey(0);
 
-    double *ptr_cameraMatrix = cameraMatrix_.ptr<double>(0);
+    double *ptr_cameraMatrix = Img_->cameraMatrix_.ptr<double>(0);
 
     geometry_msgs::PoseArray posearray;
     posearray.header.stamp = ros::Time::now(); // timestamp of creation of the msg
@@ -1848,14 +1725,14 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
                     << "Iter " << image_seq << " End <<<<<<<<<");
     image_seq += 1;
 
-    cv::circle(img_visual, help_feat_[0], 5, cv::Scalar(255, 0, 255), 1, 8, 0);
-    cv::circle(img_visual, help_feat_[1], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
-    cv::circle(img_visual, help_feat_[2], 15, cv::Scalar(255, 0, 255), 1, 8, 0);
-    cv::circle(img_visual, help_feat_[3], 20, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(Img_->img_visual_, help_feat_[0], 5, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(Img_->img_visual_, help_feat_[1], 10, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(Img_->img_visual_, help_feat_[2], 15, cv::Scalar(255, 0, 255), 1, 8, 0);
+    cv::circle(Img_->img_visual_, help_feat_[3], 20, cv::Scalar(255, 0, 255), 1, 8, 0);
 
     if(flag_cam_stream_==true)
     {
-        cv::imshow("img input", img_visual);
+        cv::imshow("img input", Img_->img_visual_);
         cv::waitKey(5);
     }
 

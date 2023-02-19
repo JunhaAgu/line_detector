@@ -36,6 +36,7 @@ set(SRC ${SRC}
   src/mono_line_detector_ros.cpp
   src/timer.cpp
   src/user_param.cpp
+  src/img.cpp
 )
 
 set(includeDirs ${includeDirs} ${CMAKE_CURRENT_BINARY_DIR})

@@ -26,22 +26,23 @@
 
 #include "timer.h"
 #include "user_param.hpp"
+#include "img.hpp"
 
 #define SQUARE(x) ((x)*(x))
 
-struct RansacParam_node
-{
-    int iter;
-    float thr;
-    int mini_inlier;
-};
+// struct RansacParam_node
+// {
+//     int iter;
+//     float thr;
+//     int mini_inlier;
+// };
 
-struct LineDetectorParam_node
-{
-    int canny_thr_h_;
-    int canny_thr_l_;
-    int line_length_;
-};
+// struct LineDetectorParam_node
+// {
+//     int canny_thr_h_;
+//     int canny_thr_l_;
+//     int line_length_;
+// };
 
 class MonoLineDetectorROS
 {
@@ -52,7 +53,7 @@ private:
     cv::Mat cameraMatrix_;
     cv::Mat distCoeffs_;
 
-    cv::Mat img_color_undist_;
+    cv::Mat img_undist_;
     cv::Mat map1_;
     cv::Mat map2_;
 
@@ -122,7 +123,7 @@ private:
     std::vector<cv::Point2f> help_feat_;
     
     //ransac
-    RansacParam_node ransac_param_;
+    RansacParam ransac_param_;
     std::random_device rd_;
     std::mt19937 gen_;
 
@@ -134,7 +135,9 @@ private:
 
 public:
     std::unique_ptr<UserParam> UserParam_;
-    LineDetectorParam_node line_detector_param_;
+    std::unique_ptr<IMG> Img_;
+
+    LineDetectorParam line_detector_param_;
 
     // for test
 private:
