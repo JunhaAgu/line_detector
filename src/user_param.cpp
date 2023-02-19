@@ -18,5 +18,5 @@ void UserParam::getUserSettingParameters()
 
     ransac_param_.iter_ = 30;
     ransac_param_.thr_ = 3;
-    ransac_param_.mini_inlier- = 30;
+    ransac_param_.mini_inlier_ = 30;
 };
