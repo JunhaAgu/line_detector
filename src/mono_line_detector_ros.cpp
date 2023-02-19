@@ -31,6 +31,17 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
         // for(int i=0;)
     }
 
+    //Class UserParam
+    UserParam_ = std::make_unique<UserParam>();
+    UserParam_->getUserSettingParameters();
+    line_detector_param_.canny_thr_h_ = UserParam_->line_detector_param_.canny_thr_h_;
+    line_detector_param_.canny_thr_l_ = UserParam_->line_detector_param_.canny_thr_l_;
+    line_detector_param_.line_length_ = UserParam_->line_detector_param_.line_length_;
+    
+    ransac_param_.iter = UserParam_->ransac_param_.iter_;
+    ransac_param_.thr = UserParam_->ransac_param_.thr_;
+    ransac_param_.mini_inlier = UserParam_->ransac_param_.mini_inlier_;
+
     flag_init_ = false;
 
     //bwlabel
@@ -44,9 +55,6 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     line_b_.reserve(20);
 
     //RANSAC
-    param_RANSAC_.iter = 30;
-    param_RANSAC_.thr = 3;
-    param_RANSAC_.mini_inlier = 30;
     points_x_tmp_.reserve(10000);
     points_y_tmp_.reserve(10000);
     points_x_tmp2_.reserve(10000);
@@ -893,9 +901,9 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
     int* ptr_points_x = points_x.data();
     int* ptr_points_y = points_y.data();
 
-    int iter = param_RANSAC_.iter;
-    float thr = param_RANSAC_.thr;
-    int mini_inlier = param_RANSAC_.mini_inlier;
+    int iter = ransac_param_.iter;
+    float thr = ransac_param_.thr;
+    int mini_inlier = ransac_param_.mini_inlier;
 
     int n_pts = points_x.size();
 
@@ -1133,11 +1141,11 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     cv_ptr->image.copyTo(img_gray);
 
     //visualization
-    if (flag_cam_stream_==true)
-    {
-        cv::imshow("img original", img_gray);
-        cv::waitKey(5);
-    }
+    // if (flag_cam_stream_==true)
+    // {
+    //     cv::imshow("img original", img_gray);
+    //     cv::waitKey(5);
+    // }
 
     //for calibration
     img_gray.copyTo(img_distort);
@@ -1196,6 +1204,13 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
         {
             *(ptr_img_gray + i_ncols + j) = 0;
         }
+    }
+
+    //visualization
+    if (flag_cam_stream_==true)
+    {
+        cv::imshow("img lines", img_gray);
+        cv::waitKey(5);
     }
 
     // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);

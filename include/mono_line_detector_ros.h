@@ -25,14 +25,22 @@
 #include <Eigen/Dense>
 
 #include "timer.h"
+#include "user_param.hpp"
 
 #define SQUARE(x) ((x)*(x))
 
-struct param_RANSAC
+struct RansacParam_node
 {
     int iter;
     float thr;
     int mini_inlier;
+};
+
+struct LineDetectorParam_node
+{
+    int canny_thr_h_;
+    int canny_thr_l_;
+    int line_length_;
 };
 
 class MonoLineDetectorROS
@@ -114,7 +122,7 @@ private:
     std::vector<cv::Point2f> help_feat_;
     
     //ransac
-    param_RANSAC param_RANSAC_;
+    RansacParam_node ransac_param_;
     std::random_device rd_;
     std::mt19937 gen_;
 
@@ -123,6 +131,10 @@ private:
 
     //permutation
     std::vector<std::vector<int>> perm_;
+
+public:
+    std::unique_ptr<UserParam> UserParam_;
+    LineDetectorParam_node line_detector_param_;
 
     // for test
 private:
