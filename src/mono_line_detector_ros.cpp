@@ -40,12 +40,12 @@ MonoLineDetectorROS::MonoLineDetectorROS(const ros::NodeHandle& nh)
     //points
     points_x_.reserve(10000);
     points_y_.reserve(10000);
-    line_a_.reserve(20);
-    line_b_.reserve(20);
+    line_a_.reserve(10);
+    line_b_.reserve(10);
 
     //RANSAC
     param_RANSAC_.iter = 30;
-    param_RANSAC_.thr = 3;
+    param_RANSAC_.thr = 1;
     param_RANSAC_.mini_inlier = 30;
     points_x_tmp_.reserve(10000);
     points_y_tmp_.reserve(10000);
@@ -1045,8 +1045,8 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
         A(i,1) = inlier_y[max_inlier_cnt_index_1][i];
         A(i,2) = 1;
 
-        // inlier_result_x.push_back(A(i,0));
-        // inlier_result_y.push_back(A(i,1));
+        inlier_result_x.push_back(A(i,0));
+        inlier_result_y.push_back(A(i,1));
     }
     std::cout << "before ransac svd" <<std::endl;
     std::cout << "inlier_x.size(): " << inlier_x.size() << std::endl;
@@ -1076,7 +1076,7 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
     line_a.push_back(t(0));
     line_b.push_back(t(2));
 
-    std::cout << line_a.size() << " << n lines by RANSAC >> " << std::endl;
+    std::cout << " << 4 lines by RANSAC >> " << std::endl;
     for (int i=0; i<line_a.size(); ++i)
     {
         std::cout << "line a[" << i << "]" <<": " << line_a[i] << " / " << "line b[" << i << "]" <<": " << line_b[i] <<std::endl;
@@ -1094,8 +1094,6 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
         {
             mask_inlier[i] = true;
             // cnt_inlier += 1;
-            inlier_result_x.push_back(ptr_points_x[i]);
-            inlier_result_y.push_back(ptr_points_y[i]);
         }
     }
 };
@@ -1317,7 +1315,7 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     }
 
     // 4 line detection
-    for (int i = 0; i < 20; ++i)
+    for (int i = 0; i < 4; ++i)
     {
         points_x_tmp2_.resize(0);
         points_y_tmp2_.resize(0);
@@ -1389,80 +1387,13 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
         if (points_x_tmp_.size() < 20 && i < 3)
         {
             flag_line_detect = false;
-            std::cout << "# of lines: " << i+1 << std::endl;
-            break;
-        }
-
-        if (points_x_tmp_.size() < 20)
-        {
-            std::cout << "# of lines: " << i+1 << std::endl;
             break;
         }
     }
-    // if (flag_cam_stream_ == true)
-    // {
-    //     cv::imshow("img input", img_visual);
-    //     cv::waitKey(0);
-    // }
-
-    std::vector<float> h_line_a_tmp;
-    std::vector<float> h_line_b_tmp;
-    std::vector<float> v_line_a_tmp;
-    std::vector<float> v_line_b_tmp;
-
-    std::vector<float> h_line_dist;
-    std::vector<float> v_line_dist;
-    for (int i = 0; i < line_a_.size(); ++i)
-    {
-        if (abs(line_a_[i]) < 1)
-        {
-            h_line_a_tmp.push_back(line_a_[i]);
-            h_line_b_tmp.push_back(line_b_[i]);
-            h_line_dist.push_back(abs(line_a_[i]*376+line_b_[i] - 240));
-        }
-        else if (abs(line_a_[i]) > 5)
-        {
-            v_line_a_tmp.push_back(line_a_[i]);
-            v_line_b_tmp.push_back(line_b_[i]);
-            v_line_dist.push_back(abs((240-line_b_[i])/line_a_[i] - 376));
-        }
-    }
-
-    if(h_line_a_tmp.size()<2 || v_line_a_tmp.size()<2)
-    {
-        std::cout << h_line_a_tmp.size()<< std::endl;
-        std::cout << v_line_a_tmp.size()<< std::endl;
-        flag_line_detect = false;
-    }
-
 
     // 4 line detection
     if (flag_line_detect == true)
     {
-        line_a_.resize(0);
-        line_b_.resize(0);
-
-        int h_line_dist_idx = std::min_element(h_line_dist.begin(), h_line_dist.end()) - h_line_dist.begin();
-        line_a_.push_back(h_line_a_tmp[h_line_dist_idx]);
-        line_b_.push_back(h_line_b_tmp[h_line_dist_idx]);
-        h_line_dist.erase(h_line_dist.begin() + h_line_dist_idx);
-        h_line_a_tmp.erase(h_line_a_tmp.begin() + h_line_dist_idx);
-        h_line_b_tmp.erase(h_line_b_tmp.begin() + h_line_dist_idx);
-
-        h_line_dist_idx = std::min_element(h_line_dist.begin(), h_line_dist.end()) - h_line_dist.begin();
-        line_a_.push_back(h_line_a_tmp[h_line_dist_idx]);
-        line_b_.push_back(h_line_b_tmp[h_line_dist_idx]);
-
-        int v_line_dist_idx = std::min_element(v_line_dist.begin(), v_line_dist.end()) - v_line_dist.begin();
-        line_a_.push_back(v_line_a_tmp[v_line_dist_idx]);
-        line_b_.push_back(v_line_b_tmp[v_line_dist_idx]);
-        v_line_dist.erase(v_line_dist.begin() + v_line_dist_idx);
-        v_line_a_tmp.erase(v_line_a_tmp.begin() + v_line_dist_idx);
-        v_line_b_tmp.erase(v_line_b_tmp.begin() + v_line_dist_idx);
-
-        v_line_dist_idx = std::min_element(v_line_dist.begin(), v_line_dist.end()) - v_line_dist.begin();
-        line_a_.push_back(v_line_a_tmp[v_line_dist_idx]);
-        line_b_.push_back(v_line_b_tmp[v_line_dist_idx]);
         // for (int i = 0; i < line_a_.size(); ++i)
         // {
         //     std::cout << "line_a_[" << i << "]: " << line_a_[i] << "  "
