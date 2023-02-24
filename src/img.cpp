@@ -89,13 +89,13 @@ void IMG::detectLines()
 void IMG::dilateImage()
 {
     // cv::threshold(img_gray, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::dilate(img_gray_, img_dilate_, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
+    cv::dilate(img_gray_, img_dilate_, cv::Mat::ones(cv::Size(15, 15), CV_8UC1));
 };
 
 void IMG::erodeImage()
 {
     // cv::threshold(img_dilate, img_threshold, 180, 255, cv::THRESH_BINARY);
-    cv::erode(img_dilate_, img_erode_, cv::Mat::ones(cv::Size(10, 10), CV_8UC1));
+    cv::erode(img_dilate_, img_erode_, cv::Mat::ones(cv::Size(15, 15), CV_8UC1));
 };
 
 void IMG::connectBinImage()

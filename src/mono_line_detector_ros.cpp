@@ -460,7 +460,8 @@ void MonoLineDetectorROS::test()
             exit(0);	
             break;	
         }
-        ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_);
+        int flag_mini_inlier = 0;
+        ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_, flag_mini_inlier);
         // std::cout<< "line_a_: " << line_a_[0]<< "line_b_: " << line_b_[0]<<std::endl;
         ROS_INFO_STREAM("no line detected haha iter: "<<i);
         
@@ -896,7 +897,8 @@ void MonoLineDetectorROS::calcLineIntersection(float dir1_a, float dir1_b, float
 
 void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int>& points_y, 
                                     /*output*/ bool mask_inlier[], std::vector<float>& line_a, std::vector<float>& line_b,
-                                                std::vector<int>& inlier_result_x, std::vector<int>& inlier_result_y)
+                                                std::vector<int>& inlier_result_x, std::vector<int>& inlier_result_y,
+                                                int& flag_mini_inlier)
 {
     float* ptr_line_a = line_a.data();
     float* ptr_line_b = line_b.data();
@@ -999,7 +1001,7 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
         }
         // std::cout << "line_B[m]: " << line_B[m] <<std::endl;
     }
-    
+
     int max_inlier_cnt = 0;
     std::vector<int> max_inlier_cnt_index;
     max_inlier_cnt_index.reserve(100);
@@ -1048,6 +1050,12 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
     }
 
     int best_n_inlier = inlier_cnt[max_inlier_cnt_index_1] - 1;
+
+    if(best_n_inlier < mini_inlier)
+    {
+        flag_mini_inlier = 0;
+        return;
+    }
 
     Eigen::MatrixXf A = Eigen::MatrixXf::Zero(best_n_inlier,3);
     for (int i=0; i<best_n_inlier; ++i)
@@ -1101,7 +1109,7 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
     {
         residual_leastsquare = std::abs(t(0)*ptr_points_x[i] - ptr_points_y[i] + t(2))* den_ls; //t(1)=-1
 
-        if ((residual_leastsquare < thr))
+        if ((residual_leastsquare < thr * 2))
         {
             mask_inlier[i] = true;
             // cnt_inlier += 1;
@@ -1109,6 +1117,8 @@ void MonoLineDetectorROS::ransacLine(std::vector<int>& points_x, std::vector<int
             inlier_result_y.push_back(ptr_points_y[i]);
         }
     }
+
+    flag_mini_inlier = 255;
 };
 
 void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
@@ -1142,10 +1152,22 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
 
     // manipulator쪽 line 제거
     uchar *ptr_img_gray = Img_->img_gray_.ptr<uchar>(0);
-    for (int i = 360; i < n_row; ++i)
+    for (int i = 370; i < n_row; ++i)
     {
         int i_ncols = i * n_col;
         for (int j = 0; j < n_col; ++j)
+        {
+            *(ptr_img_gray + i_ncols + j) = 0;
+        }
+    }
+    for (int i = 0; i < n_row; ++i)
+    {
+        int i_ncols = i * n_col;
+        for (int j = 0; j < 10; ++j)
+        {
+            *(ptr_img_gray + i_ncols + j) = 0;
+        }
+        for (int j = n_col-10; j < n_col; ++j)
         {
             *(ptr_img_gray + i_ncols + j) = 0;
         }
@@ -1233,8 +1255,13 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
             exit(0);
             break;
         }
+        int flag_mini_inlier = 0;
+        ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_, flag_mini_inlier);
 
-        ransacLine(points_x_tmp_, points_y_tmp_, /*output*/ mask_inlier, line_a_, line_b_, inlier_result_x_, inlier_result_y_);
+        if(flag_mini_inlier==0)
+        {
+            continue;
+        }
 
         ///////// visualization (from)
         // slope inf에 대한 대처
@@ -1278,14 +1305,14 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
         flag_line_detect = true;
 
         // break condition (4 line detection) - 4개가 다 완성되기전에 point 개수가 너무 적어지면 line을 찾지 못함
-        if (points_x_tmp_.size() < 20 && i < 3)
+        if (points_x_tmp_.size() < 50 && i < 3)
         {
             flag_line_detect = false;
             std::cout << "# of lines: " << i+1 << std::endl;
             break;
         }
 
-        if (points_x_tmp_.size() < 20)
+        if (points_x_tmp_.size() < 50)
         {
             std::cout << "# of lines: " << i+1 << std::endl;
             break;

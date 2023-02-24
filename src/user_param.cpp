@@ -12,13 +12,13 @@ UserParam::~UserParam()
 
 void UserParam::getUserSettingParameters()
 {
-    line_detector_param_.canny_thr_h_ = 40;
-    line_detector_param_.canny_thr_l_ = 20;
-    line_detector_param_.line_length_ = 20;
+    // line_detector_param_.canny_thr_h_ = 40;
+    // line_detector_param_.canny_thr_l_ = 20;
+    // line_detector_param_.line_length_ = 20;
 
     ransac_param_.iter_ = 30;
-    ransac_param_.thr_ = 3;
-    ransac_param_.mini_inlier_ = 30;
+    ransac_param_.thr_ = 3; //3;
+    ransac_param_.mini_inlier_ = 150;
 
     camera_intrinsic_param_.fx_ = 5.145008560635781e+02;
     camera_intrinsic_param_.fy_ = 5.145495171417294e+02;
@@ -31,10 +31,10 @@ void UserParam::getUserSettingParameters()
     camera_intrinsic_param_.p2_ = 0.0;
     camera_intrinsic_param_.k3_ = 0.0;
 
-    fast_line_detector_param_.length_threshold_     = 20;
+    fast_line_detector_param_.length_threshold_     = 10; //20;
     fast_line_detector_param_.distance_threshold_   = 1.41421356f;
-    fast_line_detector_param_.canny_th1_            = 20.0;
-    fast_line_detector_param_.canny_th2_            = 40.0;
+    fast_line_detector_param_.canny_th1_            = 50.0;
+    fast_line_detector_param_.canny_th2_            = 50.0;
     fast_line_detector_param_.canny_aperture_size_  = 3; // sobel filter size
     fast_line_detector_param_.do_merge_             = true;
 

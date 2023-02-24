@@ -146,7 +146,7 @@ private:
     void sort_filelists(std::vector<std::string>& filists, std::string& image_type);
     void ransacLine(std::vector<int>& points_x, std::vector<int>& points_y, 
                                     /*output*/ bool mask_inlier[], std::vector<float>& line_a, std::vector<float>& line_b,
-                                     std::vector<int>& inlier_result_x, std::vector<int>& inlier_result_y);
+                                     std::vector<int>& inlier_result_x, std::vector<int>& inlier_result_y, int& flag_mini_inlier);
     void calcLineIntersection(float dir1_a, float dir1_b, float dir2_a, float dir2_b, float& px_tmp, float& py_tmp);
 
     void reset_vector();
