@@ -34,6 +34,15 @@ IMG::IMG(const std::unique_ptr<UserParam>& user_param)
     this->fast_line_detector_ = cv::ximgproc::createFastLineDetector(fast_line_detector_param_.length_threshold_,
             fast_line_detector_param_.distance_threshold_, fast_line_detector_param_.canny_th1_, fast_line_detector_param_.canny_th2_,
             fast_line_detector_param_.canny_aperture_size_, fast_line_detector_param_.do_merge_);
+    // img_visual_ = cv::Mat::zeros(480, 752, CV_8UC1);
+    // img_gray_ = cv::Mat::zeros(480, 752, CV_8UC1);
+    // skel_ = cv::Mat::zeros(480, 752, CV_8UC1);
+    // cv::imshow("img input", img_visual_);
+    // cv::waitKey(5);
+    // cv::imshow("img lines", img_gray_);
+    // cv::waitKey(5);
+    // cv::imshow("img kel", skel_);
+    // cv::waitKey(5);
 };
 
 IMG::~IMG()
@@ -66,6 +75,8 @@ void IMG::undistImage()
     img_gray_.convertTo(img_visual_, CV_8UC1);
     img_gray_.convertTo(img_gray_original_, CV_8UC1);
 
+    // visualize
+    cv::cvtColor(img_gray_,grayBGR_,cv::COLOR_GRAY2BGR);
 };
 
 void IMG::detectLines()

@@ -33,6 +33,7 @@ class IMG
         cv::Mat img_undist_;
         cv::Mat img_visual_;
         cv::Mat img_gray_original_;
+        cv::Mat grayBGR_;
         
         cv::Mat img_dilate_;
         cv::Mat img_erode_;

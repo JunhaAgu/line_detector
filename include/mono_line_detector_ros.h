@@ -69,6 +69,10 @@ private:
 private:
     bool flag_cam_live_;
     bool flag_cam_stream_;
+    bool flag_image_save_;
+
+    int cnt_save_img_;
+    std::string save_image_dir_;
 // Subscribers
 private:
     ros::Subscriber sub_image_;

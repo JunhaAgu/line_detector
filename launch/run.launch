@@ -4,9 +4,11 @@
     <arg name="topicname_image"                 default="/0/image_raw"/>
     <arg name="flag_cam_live"                   default="true"/>
     <arg name="flag_cam_stream"                 default="true"/>
-    <arg name="image_dir"                       default="/home/junhakim/mono_calibration/data2/"/>
+    <arg name="image_dir"                       default="/home/junhakim/mono_calibration/data/"/>
     <arg name="image_type"                      default="png"/>
     <arg name="image_hz"                        default="20"/>
+    <arg name="flag_image_save"                 default="false"/>
+    <arg name="save_image_dir"                  default="/home/junhakim/mono_calibration/data/"/>
 
     <node pkg="line_detection" name="line_detector_node" type="line_detector_node" output="screen">
         <param name="topicname_image" type="string" value="$(arg topicname_image)"/>
@@ -15,6 +17,8 @@
         <param name="image_dir" type="string" value="$(arg image_dir)"/>
         <param name="image_type" type="string" value="$(arg image_type)"/>
         <param name="image_hz" type="int" value="$(arg image_hz)"/>
+        <param name="flag_image_save" type="bool" value="$(arg flag_image_save)"/>
+        <param name="save_image_dir" type="string" value="$(arg save_image_dir)"/>
     </node>
 
 </launch>
