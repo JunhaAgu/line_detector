@@ -3,7 +3,7 @@
 
     <arg name="topicname_image"                 default="/0/image_raw"/>
     <arg name="flag_cam_live"                   default="true"/>
-    <arg name="flag_cam_stream"                 default="true"/>
+    <arg name="flag_cam_stream"                 default="false"/>
     <arg name="image_dir"                       default="/home/junhakim/mono_calibration/data/"/>
     <arg name="image_type"                      default="png"/>
     <arg name="image_hz"                        default="20"/>

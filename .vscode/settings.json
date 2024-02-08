@@ -63,6 +63,10 @@
         "unordered_set": "cpp",
         "hash_set": "cpp",
         "any": "cpp",
-        "core": "cpp"
+        "core": "cpp",
+        "condition_variable": "cpp",
+        "mutex": "cpp",
+        "cfenv": "cpp",
+        "variant": "cpp"
     }
 }
