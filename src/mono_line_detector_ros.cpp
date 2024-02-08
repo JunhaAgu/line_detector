@@ -1298,21 +1298,24 @@ void MonoLineDetectorROS::callbackImage(const sensor_msgs::ImageConstPtr& msg)
     }
     
     // /*visualization
-    for (size_t i = 0; i < circles.size(); i++)
+    if (flag_cam_stream_ == true)
     {
-        // int id = id_order[i];
-        cv::Vec3i c = circles_sorted[i];
-        cv::Point center = cv::Point(c[0], c[1]);
-        std::cout << "center: "<< c[0] << ", " << c[1]<< std::endl;
-        std::cout << "radius: " << c[2] <<std::endl;
-        // circle center
-        circle(Img_->img_gray_, center, 1, cv::Scalar(255, 100, 100), 3, cv::LINE_AA);
-        // circle outline
-        int radius = c[2];
-        circle(Img_->img_gray_, center, radius, cv::Scalar(255, 0, 255), 3, cv::LINE_AA);
+        for (size_t i = 0; i < circles.size(); i++)
+        {
+            // int id = id_order[i];
+            cv::Vec3i c = circles_sorted[i];
+            cv::Point center = cv::Point(c[0], c[1]);
+            std::cout << "center: " << c[0] << ", " << c[1] << std::endl;
+            std::cout << "radius: " << c[2] << std::endl;
+            // circle center
+            circle(Img_->img_gray_, center, 1, cv::Scalar(255, 100, 100), 3, cv::LINE_AA);
+            // circle outline
+            int radius = c[2];
+            circle(Img_->img_gray_, center, radius, cv::Scalar(255, 0, 255), 3, cv::LINE_AA);
+        }
+        cv::imshow("detected circles", Img_->img_gray_);
+        // */
     }
-    cv::imshow("detected circles", Img_->img_gray_);
-    // */
 
     double *ptr_cameraMatrix = Img_->cameraMatrix_.ptr<double>(0);
 
